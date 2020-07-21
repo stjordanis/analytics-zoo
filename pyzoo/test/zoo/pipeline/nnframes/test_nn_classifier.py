@@ -28,6 +28,9 @@ from pyspark.sql.types import *
 
 from zoo.common.nncontext import *
 from zoo.pipeline.nnframes import *
+from zoo.pipeline.api.keras.optimizers import Adam as KAdam
+from zoo.pipeline.api.keras import layers as ZLayer
+from zoo.pipeline.api.keras.models import Model as ZModel
 from zoo.feature.common import *
 from zoo.feature.image import *
 from zoo.util.tf import *
@@ -82,7 +85,7 @@ class TestNNClassifer():
         for e in [NNEstimator(linear_model, mse_criterion),
                   NNEstimator(linear_model, mse_criterion, [2], [2]),
                   NNEstimator(linear_model, mse_criterion, SeqToTensor([2]), SeqToTensor([2]))]:
-            nnModel = e.setMaxEpoch(1).fit(df)
+            nnModel = e.setBatchSize(4).setMaxEpoch(1).fit(df)
             res = nnModel.transform(df)
             assert type(res).__name__ == 'DataFrame'
 
@@ -93,7 +96,7 @@ class TestNNClassifer():
         for e in [NNClassifier(linear_model, mse_criterion),
                   NNClassifier(linear_model, mse_criterion, [2]),
                   NNClassifier(linear_model, mse_criterion, SeqToTensor([2]))]:
-            nnModel = e.setMaxEpoch(1).fit(df)
+            nnModel = e.setBatchSize(4).setMaxEpoch(1).fit(df)
             res = nnModel.transform(df)
             assert type(res).__name__ == 'DataFrame'
 
@@ -105,6 +108,7 @@ class TestNNClassifer():
                   NNModel(linear_model, SeqToTensor([2]))]:
             res = e.transform(df)
             assert type(res).__name__ == 'DataFrame'
+            assert e.getBatchSize() == 4
 
     def test_nnClassiferModel_construct_with_differnt_params(self):
         linear_model = Sequential().add(Linear(2, 2))
@@ -114,6 +118,7 @@ class TestNNClassifer():
                   NNClassifierModel(linear_model, SeqToTensor([2]))]:
             res = e.transform(df)
             assert type(res).__name__ == 'DataFrame'
+            assert e.getBatchSize() == 4
 
     def test_all_set_get_methods(self):
         linear_model = Sequential().add(Linear(2, 2))
@@ -180,6 +185,29 @@ class TestNNClassifer():
         estimator.setGradientClippingByL2Norm(1.2)
         estimator.fit(df)
 
+    def test_nnEstimator_fit_with_Cache_Disk(self):
+        model = Sequential().add(Linear(2, 2))
+        criterion = MSECriterion()
+        estimator = NNEstimator(model, criterion, SeqToTensor([2]), ArrayToTensor([2])) \
+            .setBatchSize(1).setLearningRate(0.2).setMaxEpoch(2) \
+            .setDataCacheLevel("DISK_AND_DRAM", 2)
+
+        data = self.sc.parallelize([
+            ((2.0, 1.0), (1.0, 2.0)),
+            ((1.0, 2.0), (2.0, 1.0)),
+            ((2.0, 1.0), (1.0, 2.0)),
+            ((1.0, 2.0), (2.0, 1.0)),
+            ((2.0, 1.0), (1.0, 2.0)),
+            ((1.0, 2.0), (2.0, 1.0)),
+            ((2.0, 1.0), (1.0, 2.0)),
+            ((1.0, 2.0), (2.0, 1.0))])
+
+        schema = StructType([
+            StructField("features", ArrayType(DoubleType(), False), False),
+            StructField("label", ArrayType(DoubleType(), False), False)])
+        df = self.sqlContext.createDataFrame(data, schema)
+        estimator.fit(df)
+
     def test_nnEstimator_fit_with_non_default_featureCol(self):
         model = Sequential().add(Linear(2, 2))
         criterion = MSECriterion()
@@ -219,6 +247,21 @@ class TestNNClassifer():
             res = nnModel.transform(df)
             assert type(res).__name__ == 'DataFrame'
             assert res.select("features", "label", "tt").count() == 4
+
+    def test_nnEstimator_fit_with_adam_lr_schedile(self):
+        model = Sequential().add(Linear(2, 2))
+        criterion = MSECriterion()
+        df = self.get_estimator_df()
+        nnModel = NNEstimator(model, criterion, SeqToTensor([2]), SeqToTensor([2])) \
+            .setBatchSize(4) \
+            .setLearningRate(0.01).setMaxEpoch(1) \
+            .setPredictionCol("tt") \
+            .setOptimMethod(KAdam(
+                schedule=Plateau("Loss", factor=0.1, patience=2, mode="min", epsilon=0.01,
+                                 cooldown=0, min_lr=1e-15))) \
+            .fit(df)
+        res = nnModel.transform(df)
+        assert type(res).__name__ == 'DataFrame'
 
     def test_nnEstimator_create_with_feature_size(self):
         model = Sequential().add(Linear(2, 2))
@@ -293,6 +336,66 @@ class TestNNClassifer():
                 if exc.errno != errno.ENOENT:  # ENOENT - no such file or directory
                     raise  # re-raise exception
 
+    def test_NNEstimator_multi_input(self):
+        zx1 = ZLayer.Input(shape=(1, ))
+        zx2 = ZLayer.Input(shape=(1, ))
+        zz = ZLayer.merge([zx1, zx2], mode="concat")
+        zy = ZLayer.Dense(2)(zz)
+        zmodel = ZModel([zx1, zx2], zy)
+
+        criterion = MSECriterion()
+        df = self.get_estimator_df()
+        estimator = NNEstimator(zmodel, criterion, [[1], [1]]).setMaxEpoch(5) \
+            .setBatchSize(4)
+        nnmodel = estimator.fit(df)
+        nnmodel.transform(df).collect()
+
+    def test_NNEstimator_works_with_VectorAssembler_multi_input(self):
+        if self.sc.version.startswith("2"):
+            from pyspark.ml.linalg import Vectors
+            from pyspark.ml.feature import VectorAssembler
+            from pyspark.sql import SparkSession
+
+            spark = SparkSession \
+                .builder \
+                .getOrCreate()
+
+            df = spark.createDataFrame(
+                [(1, 35, 109.0, Vectors.dense([2.0, 5.0, 0.5, 0.5]), 1.0),
+                 (2, 58, 2998.0, Vectors.dense([4.0, 10.0, 0.5, 0.5]), 2.0),
+                 (3, 18, 123.0, Vectors.dense([3.0, 15.0, 0.5, 0.5]), 1.0)],
+                ["user", "age", "income", "history", "label"])
+
+            assembler = VectorAssembler(
+                inputCols=["user", "age", "income", "history"],
+                outputCol="features")
+
+            df = assembler.transform(df)
+
+            x1 = ZLayer.Input(shape=(1,))
+            x2 = ZLayer.Input(shape=(2,))
+            x3 = ZLayer.Input(shape=(2, 2,))
+
+            user_embedding = ZLayer.Embedding(5, 10)(x1)
+            flatten = ZLayer.Flatten()(user_embedding)
+            dense1 = ZLayer.Dense(2)(x2)
+            gru = ZLayer.LSTM(4, input_shape=(2, 2))(x3)
+
+            merged = ZLayer.merge([flatten, dense1, gru], mode="concat")
+            zy = ZLayer.Dense(2)(merged)
+
+            zmodel = ZModel([x1, x2, x3], zy)
+            criterion = ClassNLLCriterion()
+            classifier = NNClassifier(zmodel, criterion, [[1], [2], [2, 2]]) \
+                .setOptimMethod(Adam()) \
+                .setLearningRate(0.1) \
+                .setBatchSize(2) \
+                .setMaxEpoch(10)
+
+            nnClassifierModel = classifier.fit(df)
+            print(nnClassifierModel.getBatchSize())
+            res = nnClassifierModel.transform(df).collect()
+
     def test_NNModel_transform_with_nonDefault_featureCol(self):
         model = Sequential().add(Linear(2, 2))
         nnModel = NNModel(model, SeqToTensor([2]))\
@@ -351,7 +454,7 @@ class TestNNClassifer():
     def test_NNModel_save_load(self):
         model = Sequential().add(Linear(2, 2))
         criterion = MSECriterion()
-        estimator = NNEstimator(model, criterion).setMaxEpoch(1)
+        estimator = NNEstimator(model, criterion).setMaxEpoch(1).setBatchSize(4)
 
         df = self.get_estimator_df()
         nnModel = estimator.fit(df)
@@ -522,7 +625,7 @@ class TestNNClassifer():
             scaler = MinMaxScaler().setInputCol("features").setOutputCol("scaled")
             model = Sequential().add(Linear(2, 2))
             criterion = ClassNLLCriterion()
-            classifier = NNClassifier(model, criterion, MLlibVectorToTensor([2]))\
+            classifier = NNClassifier(model, criterion)\
                 .setBatchSize(4) \
                 .setLearningRate(0.01).setMaxEpoch(1).setFeaturesCol("scaled")
 
@@ -558,7 +661,7 @@ class TestNNClassifer():
     def test_NNClassifierModel_save_load(self):
         model = Sequential().add(Linear(2, 2))
         criterion = ClassNLLCriterion()
-        classifier = NNClassifier(model, criterion, [2]).setMaxEpoch(1)
+        classifier = NNClassifier(model, criterion, [2]).setMaxEpoch(1).setBatchSize(4)
 
         df = self.get_classifier_df()
         nnClassifierModel = classifier.fit(df)
@@ -601,6 +704,23 @@ class TestNNClassifer():
 
         if not raised_error:
             raise ValueError("we do not find this error, test failed")
+
+    def test_XGBClassifierModel_predict(self):
+        resource_path = os.path.join(os.path.split(__file__)[0], "../../resources")
+        path = os.path.join(resource_path, "xgbclassifier/")
+        modelPath = path + "XGBClassifer.bin"
+        filePath = path + "test.csv"
+        model = XGBClassifierModel.loadModel(modelPath, 2)
+
+        from pyspark.sql import SparkSession
+
+        spark = SparkSession \
+            .builder \
+            .getOrCreate()
+        df = spark.read.csv(filePath, sep=",", inferSchema=True, header=True)
+        model.setFeaturesCol(["age", "gender", "jointime", "star"])
+        predict = model.transform(df)
+        predict.count()
 
 
 if __name__ == "__main__":

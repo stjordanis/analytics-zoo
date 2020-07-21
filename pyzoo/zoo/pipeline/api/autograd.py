@@ -17,8 +17,9 @@
 import sys
 
 from bigdl.nn.layer import Layer, Node
-from bigdl.util.common import callBigDlFunc, to_list
+from bigdl.util.common import to_list, JTensor
 
+from zoo.common.utils import callZooFunc
 import zoo.pipeline.api.keras.base as kbase
 from zoo.pipeline.api.keras.objectives import LossFunction
 from zoo.pipeline.api.utils import remove_batch, toMultiShape
@@ -39,7 +40,7 @@ def mean(x, axis=0, keepDims=False):
             the reduced dimensions are retained with length 1.
     :return: A variable with the mean of elements of `x`.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "mean", x, axis, keepDims))
+    return Variable.from_jvalue(callZooFunc("float", "mean", x, axis, keepDims))
 
 
 def abs(x):
@@ -48,7 +49,7 @@ def abs(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "abs", x))
+    return Variable.from_jvalue(callZooFunc("float", "abs", x))
 
 
 def batch_dot(x, y, axes=1, normalize=False):
@@ -73,7 +74,7 @@ def batch_dot(x, y, axes=1, normalize=False):
     if not normalize:
         if isinstance(axes, int):
             axes = [axes] * 2
-    return Variable.from_jvalue(callBigDlFunc("float", "batchDot", x, y, axes, normalize))
+    return Variable.from_jvalue(callZooFunc("float", "batchDot", x, y, axes, normalize))
 
 
 def l2_normalize(x, axis):
@@ -83,7 +84,7 @@ def l2_normalize(x, axis):
     :param axis: axis along which to perform normalization.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "l2Normalize", x, int(axis)))
+    return Variable.from_jvalue(callZooFunc("float", "l2Normalize", x, int(axis)))
 
 
 def sum(x, axis=0, keepDims=False):
@@ -97,7 +98,7 @@ def sum(x, axis=0, keepDims=False):
             the reduced dimensions are retained with length 1.
     :return: A variable with sum of `x`.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "sum", x, axis, keepDims))
+    return Variable.from_jvalue(callZooFunc("float", "sum", x, axis, keepDims))
 
 
 def stack(inputs, axis=1):
@@ -108,7 +109,7 @@ def stack(inputs, axis=1):
     :param axis: axis along which to perform stacking.
     :return:
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "stack", inputs, axis))
+    return Variable.from_jvalue(callZooFunc("float", "stack", inputs, axis))
 
 
 def expand_dims(x, axis):
@@ -118,7 +119,7 @@ def expand_dims(x, axis):
     :param axis: axis Position where to add a new axis.
     The axis is 0 based and if you set the axis to 0, you would change the batch dim.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "expandDims", x, axis))
+    return Variable.from_jvalue(callZooFunc("float", "expandDims", x, axis))
 
 
 def clip(x, min, max):
@@ -129,7 +130,7 @@ def clip(x, min, max):
     :param max: Python float or integer.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "clip", x, float(min), float(max)))
+    return Variable.from_jvalue(callZooFunc("float", "clip", x, float(min), float(max)))
 
 
 def contiguous(x):
@@ -137,7 +138,7 @@ def contiguous(x):
     Turn the output and grad to be contiguous for the input Variable
     :param x: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "contiguous", x))
+    return Variable.from_jvalue(callZooFunc("float", "contiguous", x))
 
 
 def square(x):
@@ -146,7 +147,7 @@ def square(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "square", x))
+    return Variable.from_jvalue(callZooFunc("float", "square", x))
 
 
 def sqrt(x):
@@ -155,7 +156,7 @@ def sqrt(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "sqrt", x))
+    return Variable.from_jvalue(callZooFunc("float", "sqrt", x))
 
 
 def exp(x):
@@ -164,7 +165,7 @@ def exp(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "exp", x))
+    return Variable.from_jvalue(callZooFunc("float", "exp", x))
 
 
 def maximum(x, y):
@@ -174,7 +175,7 @@ def maximum(x, y):
     :param y: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "maximum", x, y))
+    return Variable.from_jvalue(callZooFunc("float", "maximum", x, y))
 
 
 def log(x):
@@ -183,7 +184,7 @@ def log(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "log", x))
+    return Variable.from_jvalue(callZooFunc("float", "log", x))
 
 
 def pow(x, a):
@@ -193,7 +194,7 @@ def pow(x, a):
     :param a: Python integer.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "pow", x, float(a)))
+    return Variable.from_jvalue(callZooFunc("float", "pow", x, float(a)))
 
 
 def epsilon():
@@ -201,7 +202,7 @@ def epsilon():
     Define the value of epsilon.
     :return: A value of type Double.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "epsilon"))
+    return Variable.from_jvalue(callZooFunc("float", "epsilon"))
 
 
 def neg(x):
@@ -210,7 +211,7 @@ def neg(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "neg", x))
+    return Variable.from_jvalue(callZooFunc("float", "neg", x))
 
 
 def softsign(x):
@@ -219,7 +220,7 @@ def softsign(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "softsign", x))
+    return Variable.from_jvalue(callZooFunc("float", "softsign", x))
 
 
 def softplus(x):
@@ -228,10 +229,10 @@ def softplus(x):
     :param x: A variable.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "softplus", x))
+    return Variable.from_jvalue(callZooFunc("float", "softplus", x))
 
 
-def mm(x, y, axes):
+def mm(x, y, axes=None):
     """
     Module to perform matrix multiplication on two mini-batch inputs,
     producing a mini-batch.
@@ -240,32 +241,19 @@ def mm(x, y, axes):
     :param axes: Axes along which to perform multiplication.
     :return: A variable.
     """
-    return Variable.from_jvalue(callBigDlFunc("float", "mm", x, y, axes))
+    return Variable.from_jvalue(callZooFunc("float", "mm", x, y, axes))
 
 
-class Variable(kbase.ZooKerasCreator):
-    def __init__(self, input_shape, node=None, jvalue=None, name=None):
-        self.name = name
-        if jvalue:
-            self.value = jvalue
-            self.bigdl_type = "float"
-        else:
-            if node:
-                super(Variable, self).__init__(jvalue, "float", node, name)
-            else:
-                super(Variable, self).__init__(jvalue, "float", toMultiShape(input_shape), name)
+def erf(x):
+    """
+    Computes the error function(Gauss error function) of each element.
+    :param x: A variable.
+    :return: A variable.
+    """
+    return Variable.from_jvalue(callZooFunc("float", "erf", x))
 
-    def set_name(self, name):
-        self.node.element().set_name(name)
 
-    @classmethod
-    def from_node(cls, node):
-        return cls(input_shape=None, node=node)
-
-    @property
-    def node(self):
-        return Node.of(self.value.node())
-
+class VariableOperator(object):
     # TODO: we need to add a mapping for Shape here.
     def __to_batch_shape(cls, shape):
         return tuple([None] + shape[1:])
@@ -277,27 +265,31 @@ class Variable(kbase.ZooKerasCreator):
             return [self.__to_batch_shape(s) for s in shape]
 
     def get_input_shape(self):
-        return self.__process_shape(callBigDlFunc("float", "varGetInputShape", self))
+        return self.__process_shape(callZooFunc("float", "varGetInputShape", self))
 
     def get_output_shape(self):
-        return self.__process_shape(callBigDlFunc("float", "varGetOutputShape", self))
+        return self.__process_shape(callZooFunc("float", "varGetOutputShape", self))
+
+    @property
+    def shape(self):
+        return self.get_output_shape()
 
     @staticmethod
     def from_jvalue(jvalue):
         return Variable(input_shape=None, node=None, jvalue=jvalue)
 
     def add(self, var):
-        return Variable.from_jvalue(callBigDlFunc("float", "add", self, var))
+        return Variable.from_jvalue(callZooFunc("float", "add", self, var))
         # self.value.getClass().getSimpleName()
 
     def sub(self, var):
-        return Variable.from_jvalue(callBigDlFunc("float", "sub", self, var))
+        return Variable.from_jvalue(callZooFunc("float", "sub", self, var))
 
     def __sub__(self, other):
         return self.sub(other)
 
     def __rsub__(self, other):
-        return Variable.from_jvalue(callBigDlFunc("float", "sub", other, self))
+        return Variable.from_jvalue(callZooFunc("float", "sub", other, self))
 
     def __add__(self, other):
         return self.add(other)
@@ -305,32 +297,22 @@ class Variable(kbase.ZooKerasCreator):
     __radd__ = __add__
 
     def __mul__(self, other):
-        return Variable.from_jvalue(callBigDlFunc("float", "mul", self, other))
+        return Variable.from_jvalue(callZooFunc("float", "mul", self, other))
 
     __rmul__ = __mul__
 
     def __div__(self, other):
-        return Variable.from_jvalue(callBigDlFunc("float", "div", self, other))
+        return Variable.from_jvalue(callZooFunc("float", "div", self, other))
 
     __truediv__ = __div__
 
     def __rdiv__(self, other):
-        return Variable.from_jvalue(callBigDlFunc("float", "div", other, self))
+        return Variable.from_jvalue(callZooFunc("float", "div", other, self))
 
     __rtruediv__ = __rdiv__
 
     def __neg__(self):
         return neg(self)
-
-    def squeeze(self, dim=None):
-        """
-        Delete the singleton dimension(s).
-        The dim can be zero, and if so you would change the batch dim.
-        For example, if input has size (2, 1, 3, 4, 1):
-        Squeeze(dim = 1) will give output size (2, 3, 4, 1)
-        Squeeze(dims = null) will give output size (2, 3, 4)
-        """
-        return Variable.from_jvalue(callBigDlFunc("float", "squeeze", self, dim))
 
     def slice(self, dim, start_index, length):
         """
@@ -353,7 +335,7 @@ class Variable(kbase.ZooKerasCreator):
         :param length The length to be sliced. Default is 1.
         """
         return Variable.from_jvalue(
-            callBigDlFunc("float", "slice", self, dim, start_index, length))
+            callZooFunc("float", "slice", self, dim, start_index, length))
 
     def index_select(self, dim, index):
         """
@@ -371,23 +353,41 @@ class Variable(kbase.ZooKerasCreator):
                -1 means the last dimension of the input.
         :return:
         """
-        return Variable.from_jvalue(callBigDlFunc("float", "indexSelect", self, dim, index))
+        return Variable.from_jvalue(callZooFunc("float", "indexSelect", self, dim, index))
 
-    # TODO: we need a Shape mapping here.
-    def __to_batch_shape(cls, shape):
-        return tuple([None] + shape[1:])
+    def squeeze(self, dim=None):
+        """
+        Delete the singleton dimension(s).
+        The dim can be zero, and if so you would change the batch dim.
+        For example, if input has size (2, 1, 3, 4, 1):
+        Squeeze(dim = 1) will give output size (2, 3, 4, 1)
+        Squeeze(dims = null) will give output size (2, 3, 4)
+        """
+        return Variable.from_jvalue(callZooFunc("float", "squeeze", self, dim))
 
-    def __process_shape(self, shape):
-        if len(shape) == 1:
-            return self.__to_batch_shape(shape[0])
+
+class Variable(kbase.ZooKerasCreator, VariableOperator):
+    def __init__(self, input_shape, node=None, jvalue=None, name=None):
+        self.name = name
+        if jvalue:
+            self.value = jvalue
+            self.bigdl_type = "float"
         else:
-            return [self.__to_batch_shape(s) for s in shape]
+            if node:
+                super(Variable, self).__init__(jvalue, "float", node, name)
+            else:
+                super(Variable, self).__init__(jvalue, "float", toMultiShape(input_shape), name)
 
-    def get_input_shape(self):
-        return self.__process_shape(callBigDlFunc("float", "varGetInputShape", self))
+    def set_name(self, name):
+        self.node.element().set_name(name)
 
-    def get_output_shape(self):
-        return self.__process_shape(callBigDlFunc("float", "varGetOutputShape", self))
+    @classmethod
+    def from_node(cls, node):
+        return cls(input_shape=None, node=node)
+
+    @property
+    def node(self):
+        return Node.of(self.value.node())
 
 
 class Lambda(kbase.ZooKerasCreator):
@@ -425,10 +425,10 @@ class Lambda(kbase.ZooKerasCreator):
         if isinstance(self, Lambda):
             input_shapes = [var.get_output_shape() for var in x]
             layer = self.create(remove_batch(input_shapes))
-        return Variable.from_jvalue(callBigDlFunc(self.bigdl_type,
-                                                  "connectInputs",
-                                                  layer,
-                                                  to_list(x)))
+        return Variable.from_jvalue(callZooFunc(self.bigdl_type,
+                                                "connectInputs",
+                                                layer,
+                                                to_list(x)))
 
     # input_shapes should not contain batch dim
     def create(self, input_shapes):
@@ -448,7 +448,7 @@ class LambdaLayer(kbase.ZooKerasLayer):
                                           **kwargs)
 
 
-class Parameter(kbase.ZooKerasLayer):
+class Parameter(kbase.ZooKerasLayer, VariableOperator):
     """
     A trainable Variable. The default init_method is RandomUniform(-0.05, 0.05).
     You can also specify the init_weight by passing a ndarray.
@@ -458,6 +458,7 @@ class Parameter(kbase.ZooKerasLayer):
     :param init_weight: A ndarray as the init value.
     :param trainable It's true by default, meaning the value would be updated by gradient.
     """
+
     def __init__(self, shape, init_method=None,
                  init_weight=None, trainable=True, **kwargs):
         if not init_method:
@@ -468,15 +469,19 @@ class Parameter(kbase.ZooKerasLayer):
                                         init_method,
                                         kbase.JTensor.from_ndarray(init_weight),
                                         trainable,
-                                        ** kwargs)
+                                        **kwargs)
+
+    @property
+    def shape(self):
+        return self.get_weight().shape
 
     def get_weight(self):
         """
         :return: the ndarray for the current weight
         """
-        jtensor = callBigDlFunc(self.bigdl_type,
-                                "getParameterWeight",
-                                self)
+        jtensor = callZooFunc(self.bigdl_type,
+                              "getParameterWeight",
+                              self)
         return jtensor.to_ndarray()
 
     def set_weight(self, value):
@@ -484,10 +489,22 @@ class Parameter(kbase.ZooKerasLayer):
         :param value: value is a ndarray
         :return:
         """
-        callBigDlFunc(self.bigdl_type,
-                      "setParameterWeight",
-                      self,
-                      kbase.JTensor.from_ndarray(value))
+        callZooFunc(self.bigdl_type,
+                    "setParameterWeight",
+                    self,
+                    kbase.JTensor.from_ndarray(value))
+
+
+class Constant(kbase.ZooKerasCreator, VariableOperator):
+    """
+    A constant Variable without weights.
+    :param data: value of the Variable.
+    :param name: Optional. Name of the Variable
+    """
+
+    def __init__(self, data, name=None, bigdl_type="float"):
+        self.data = data
+        super(Constant, self).__init__(None, bigdl_type, JTensor.from_ndarray(data), name)
 
 
 class CustomLoss(LossFunction):
@@ -519,13 +536,13 @@ class CustomLoss(LossFunction):
         target = y_true
         jinput, input_is_table = Layer.check_input(input)
         jtarget, target_is_table = Layer.check_input(target)
-        output = callBigDlFunc(self.bigdl_type,
-                               "criterionForward",
-                               self.value,
-                               jinput,
-                               input_is_table,
-                               jtarget,
-                               target_is_table)
+        output = callZooFunc(self.bigdl_type,
+                             "criterionForward",
+                             self.value,
+                             jinput,
+                             input_is_table,
+                             jtarget,
+                             target_is_table)
         return output
 
     def backward(self, y_true, y_pred):
@@ -541,11 +558,11 @@ class CustomLoss(LossFunction):
         target = y_true
         jinput, input_is_table = Layer.check_input(input)
         jtarget, target_is_table = Layer.check_input(target)
-        output = callBigDlFunc(self.bigdl_type,
-                               "criterionBackward",
-                               self.value,
-                               jinput,
-                               input_is_table,
-                               jtarget,
-                               target_is_table)
+        output = callZooFunc(self.bigdl_type,
+                             "criterionBackward",
+                             self.value,
+                             jinput,
+                             input_is_table,
+                             jtarget,
+                             target_is_table)
         return Layer.convert_output(output)

@@ -62,16 +62,23 @@ class OnnxHelper:
                 border_mode = 'same'
             elif onnx_attr['auto_pad'].decode() == 'VALID':
                 border_mode = 'valid'
+            elif onnx_attr['auto_pad'].decode() == 'NOTSET':
+                assert "pads" in onnx_attr.keys(), "you should specify pads explicitly"
             else:
                 raise NotImplementedError('Unknown auto_pad mode "%s", '
                                           'only SAME_UPPER and VALID are supported.'
                                           % onnx_attr['auto_pad'])
 
+        # In ONNX, pads format is [x1_begin, x2_begin...x1_end, x2_end,...].
+        # While pads format we supported should be [x1_begin, x1_end, x2_begin, x2_end...]
         if "pads" in onnx_attr.keys():
-            pads4 = [int(i) for i in onnx_attr["pads"]]
-            assert len(pads4) == 4
-            assert pads4[0] == pads4[1]
-            assert pads4[2] == pads4[3]
-            pads = [pads4[0], pads4[1]]
+            pads = [int(i) for i in onnx_attr["pads"]]
+            if len(pads) == 4:
+                assert pads[0] == pads[2]
+                assert pads[1] == pads[3]
+                pads = [pads[0], pads[1]]
+            elif len(pads) == 2:
+                assert pads[0] == pads[1]
+                pads = pads[0]
 
         return border_mode, pads

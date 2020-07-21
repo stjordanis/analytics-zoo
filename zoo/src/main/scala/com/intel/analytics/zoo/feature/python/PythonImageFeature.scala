@@ -16,17 +16,19 @@
 
 package com.intel.analytics.zoo.feature.python
 
+import java.util
 import java.util.{List => JList}
 
 import com.intel.analytics.bigdl.nn.abstractnn.DataFormat
-import com.intel.analytics.bigdl.python.api.{JTensor, PythonBigDL}
+import com.intel.analytics.bigdl.python.api.JTensor
 import com.intel.analytics.bigdl.tensor.{Storage, Tensor}
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.transform.vision.image._
+import com.intel.analytics.bigdl.transform.vision.image.opencv.OpenCVMat
+import com.intel.analytics.zoo.common.PythonZoo
 import com.intel.analytics.zoo.feature.common.Preprocessing
 import com.intel.analytics.zoo.feature.image._
 import com.intel.analytics.zoo.feature.image3d._
-
 import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
@@ -41,7 +43,7 @@ object PythonImageFeature {
   def ofDouble(): PythonImageFeature[Double] = new PythonImageFeature[Double]()
 }
 
-class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonBigDL[T] {
+class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZoo[T] {
   def transformImageSet(transformer: Preprocessing[ImageFeature, ImageFeature],
                       imageSet: ImageSet): ImageSet = {
     imageSet.transform(transformer)
@@ -53,11 +55,22 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
   }
 
   def readImageSet(path: String, sc: JavaSparkContext, minPartitions: Int,
-                   resizeH: Int, resizeW: Int, imageCodec: Int): ImageSet = {
+                   resizeH: Int, resizeW: Int, imageCodec: Int,
+                   withLabel: Boolean, oneBasedLabel: Boolean): ImageSet = {
     if (sc == null) {
-      ImageSet.read(path, null, minPartitions, resizeH, resizeW, imageCodec)
+      ImageSet.read(path, null, minPartitions, resizeH, resizeW,
+        imageCodec, withLabel, oneBasedLabel)
     } else {
-      ImageSet.read(path, sc.sc, minPartitions, resizeH, resizeW, imageCodec)
+      ImageSet.read(path, sc.sc, minPartitions, resizeH, resizeW,
+        imageCodec, withLabel, oneBasedLabel)
+    }
+  }
+
+  def imageSetGetLabelMap(imageSet: ImageSet): util.Map[String, Int] = {
+    if (imageSet.labelMap.isEmpty) {
+      null
+    } else {
+      imageSet.labelMap.get.asJava
     }
   }
 
@@ -69,11 +82,10 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
                                  floatKey: String = ImageFeature.floats,
                                  toChw: Boolean = true): JList[JTensor] = {
     imageSet.array.map(imf => {
-      // 3D image
       if (imf.getSize == null) {
         imageFeature3DToImageTensor(imf, floatKey)
       } else {
-        imageFeatureToImageTensor(imf, floatKey, toChw)
+        toTensor(imf, toChw)
       }
     }).toList.asJava
   }
@@ -81,6 +93,24 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
   def imageFeature3DToImageTensor(imageFeature: ImageFeature,
                                   tensorKey: String = ImageFeature.imageTensor): JTensor = {
     toJTensor(imageFeature(tensorKey).asInstanceOf[Tensor[T]])
+  }
+
+  def toTensor(imf: ImageFeature, toChw: Boolean = true): JTensor = {
+    val (data, size) = if (imf.contains(ImageFeature.floats)) {
+      (imf.floats(),
+        Array(imf.getHeight(), imf.getWidth(), imf.getChannel()))
+    } else {
+      val mat = imf.opencvMat()
+      val floats = new Array[Float](mat.height() * mat.width() * imf.getChannel())
+      OpenCVMat.toFloatPixels(mat, floats)
+      (floats, Array(mat.height(), mat.width(), imf.getChannel()))
+    }
+    var image = Tensor(Storage(data)).resize(size)
+    if (toChw) {
+      // transpose the shape of image from (h, w, c) to (c, h, w)
+      image = image.transpose(1, 3).transpose(2, 3).contiguous()
+    }
+    toJTensor(image.asInstanceOf[Tensor[T]])
   }
 
   def localImageSetToLabelTensor(imageSet: LocalImageSet): JList[JTensor] = {
@@ -94,14 +124,11 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
 
   def distributedImageSetToImageTensorRdd(imageSet: DistributedImageSet,
     floatKey: String = ImageFeature.floats, toChw: Boolean = true): JavaRDD[JTensor] = {
-
     imageSet.rdd.map(imf => {
       // 3D image
       if (imf.getSize == null) {
         imageFeature3DToImageTensor(imf, floatKey)
-      } else {
-          imageFeatureToImageTensor(imf, floatKey, toChw)
-      }
+      } else toTensor(imf, toChw)
     }).toJavaRDD()
   }
 
@@ -193,8 +220,21 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
     ImageBytesToMat(byteKey, imageCodec)
   }
 
+  def createImagePixelBytesToMat(
+      byteKey: String = ImageFeature.bytes): ImagePixelBytesToMat = {
+    ImagePixelBytesToMat(byteKey)
+  }
+
   def createImageBrightness(deltaLow: Double, deltaHigh: Double): ImageBrightness = {
     ImageBrightness(deltaLow, deltaHigh)
+  }
+
+  def createImageFeatureToTensor(): ImageFeatureToTensor[T] = {
+    ImageFeatureToTensor()
+  }
+
+  def createImageFeatureToSample(): ImageFeatureToSample[T] = {
+    ImageFeatureToSample()
   }
 
   def createImageChannelNormalizer(
@@ -204,6 +244,10 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
 
     ImageChannelNormalize(meanR.toFloat, meanG.toFloat, meanB.toFloat,
       stdR.toFloat, stdG.toFloat, stdB.toFloat)
+  }
+
+  def createPerImageNormalize(min: Double, max: Double, normType: Int = 32): PerImageNormalize = {
+    PerImageNormalize(min, max, normType)
   }
 
   def createImageMatToTensor(toRGB: Boolean = false,
@@ -276,6 +320,13 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
     ImagePixelNormalizer(means.asScala.toArray.map(_.toFloat))
   }
 
+  def createImageRandomPreprocessing(
+      preprocessing: ImageProcessing,
+      prob: Double
+    ): ImageRandomPreprocessing = {
+    ImageRandomPreprocessing(preprocessing, prob)
+  }
+
   def createImageRandomCrop(cropWidth: Int, cropHeight: Int, isClip: Boolean): ImageRandomCrop = {
     ImageRandomCrop(cropWidth, cropHeight, isClip)
   }
@@ -303,6 +354,10 @@ class PythonImageFeature[T: ClassTag](implicit ev: TensorNumeric[T]) extends Pyt
 
   def createImageHFlip(): ImageHFlip = {
     ImageHFlip()
+  }
+
+  def createImageMirror(): ImageMirror = {
+    ImageMirror()
   }
 
   def createImageSetToSample(inputKeys: JList[String],

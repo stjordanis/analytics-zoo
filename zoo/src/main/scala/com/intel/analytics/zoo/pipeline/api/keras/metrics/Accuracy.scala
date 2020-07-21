@@ -21,19 +21,28 @@ import com.intel.analytics.bigdl.optim.{AccuracyResult, Top1Accuracy, Validation
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 
+import scala.reflect.ClassTag
+
 /**
- * Measures top1 accuracy for classification problems.
+ * Measures top1 accuracy for multi-class classification
+ * or accuracy for binary classification.
  *
  * @param zeroBasedLabel Boolean. Whether target labels start from 0. Default is true.
  *                       If false, labels start from 1.
+ *                       Note that this only takes effect for multi-class classification.
+ *                       For binary classification, labels ought to be 0 or 1.
  */
-class Accuracy[T](
+@deprecated("use SparseCategoricalAccuracy, CategoricalAccuracy or BinaryAccuracy instead", "0.5.0")
+class Accuracy[T: ClassTag](
     val zeroBasedLabel: Boolean = true)(implicit ev: TensorNumeric[T])
   extends Top1Accuracy[T] {
 
   override def apply(output: Activity, target: Activity):
   ValidationResult = {
-    if (zeroBasedLabel) {
+    val _output = output.toTensor[T]
+    val binaryClassification = (_output.dim() == 2 && _output.size(2) == 1) ||
+      (_output.dim() == 1 && _output.size(1) == 1)
+    if (zeroBasedLabel && ! binaryClassification) {
       super.apply(output, target.toTensor[T].clone().add(ev.fromType(1.0f)))
     }
     else {
@@ -43,12 +52,56 @@ class Accuracy[T](
 }
 
 /**
- * Measures top5 accuracy for classification problems.
+ * Measures top1 accuracy for multi-class classification with sparse target and zero-base index.
+ *
+ */
+class SparseCategoricalAccuracy[T: ClassTag]()(implicit ev: TensorNumeric[T]) extends
+  Top1Accuracy[T] {
+  override def apply(output: Activity, target: Activity):
+  ValidationResult = {
+    super.apply(output, target.toTensor[T].clone().add(ev.fromType(1.0f)))
+  }
+}
+
+
+/**
+ * Measures top1 accuracy for binary classification with zero-base index.
+ *
+ */
+class BinaryAccuracy[T: ClassTag]()(implicit ev: TensorNumeric[T]) extends Top1Accuracy[T]
+
+
+/**
+ * Measures top1 accuracy for multi-class with "one-hot" target.
+ *
+ */
+class CategoricalAccuracy[T: ClassTag]()(implicit ev: TensorNumeric[T]) extends
+  Top1Accuracy[T] {
+  override def apply(output: Activity, target: Activity):
+  ValidationResult = {
+    val _target = target.toTensor[T]
+    val _output = output.toTensor[T]
+
+    require(_target.dim() == 2, "Target should have 2 dims with one-hot encoding")
+    require(_target.size().deep == _output.size().deep,
+      s"${_target.size()} == ${_output.size()}")
+
+    val bigdlTarget = if (_target.dim() == 2) {
+      _target.max(2)._2
+    } else {
+      _target.max(1)._2
+    }
+    super.apply(output, bigdlTarget)
+  }
+}
+
+/**
+ * Measures top5 accuracy for multi-class classification.
  *
  * @param zeroBasedLabel Boolean. Whether target labels start from 0. Default is true.
  *                       If false, labels start from 1.
  */
-class Top5Accuracy[T](
+class Top5Accuracy[T: ClassTag](
     val zeroBasedLabel: Boolean = true)(implicit ev: TensorNumeric[T])
   extends BigDLTop5Accuracy[T] {
 

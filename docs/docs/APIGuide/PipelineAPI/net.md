@@ -66,88 +66,26 @@ model = Net.loadCaffe("hdfs://def/path", "hdfs://model/path") //load from hdfs
 model = Net.loadCaffe("s3://def/path", "s3://model/path") //load from s3
 ```
 
-### Load Tensorflow model
-
-We also provides utilities to load tensorflow model.
-
-If we already have a frozen graph protobuf file, we can use the `loadTF` api directly to
-load the tensorflow model. 
-
-Otherwise, we should first use the `export_tf_checkpoint.py` script provided by BigDL's distribution
-package, or the `dump_model` function defined in [here](https://github.com/intel-analytics/BigDL/blob/master/pyspark/bigdl/util/tf_utils.py) to
-generate the model definition file (`model.pb`) and variable binary file (`model.bin`). 
-
-**Use Script**
-```shell
-GRAPH_META_FILE=/tmp/tensorflow/model.ckpt.meta
-CKPT_FILE_PREFIX=/tmp/tensorflow/model.ckpt
-SAVE_PATH=/tmp/model/
-python export_tf_checkpoint.py $GRAPH_META_FILE $CKPT_FILE_PREFIX $SAVE_PATH
-```
-
-**Use python function**
-```python
-import tensorflow as tf
-
-# This is your model definition.
-xs = tf.placeholder(tf.float32, [None, 1])
-
-W1 = tf.Variable(tf.zeros([1,10])+0.2)
-b1 = tf.Variable(tf.zeros([10])+0.1)
-Wx_plus_b1 = tf.nn.bias_add(tf.matmul(xs,W1), b1)
-output = tf.nn.tanh(Wx_plus_b1, name="output")
-
-# Adding the following lines right after your model definition 
-from bigdl.util.tf_utils import dump_model
-dump_model_path = "/tmp/model"
-# This line of code will create a Session and initialized all the Variable and
-# save the model definition and variable to dump_model_path as BigDL readable format.
-dump_model(path=dump_model_path)
-```
-
-Then we can use the `loadTF` api to load the tensorflow model into BigDL.
-
-**Scala example**
-```scala
-val modelPath = "/tmp/model/model.pb"
-val binPath = "/tmp/model/model.bin"
-val inputs = Seq("Placeholder")
-val outputs = Seq("output")
-
-// For tensorflow frozen graph or graph without Variables
-val model = Net.loadTF(modelPath, inputs, outputs, ByteOrder.LITTLE_ENDIAN)
-                            
-// For tensorflow graph with Variables
-val model = Net.loadTF(modelPath, inputs, outputs, ByteOrder.LITTLE_ENDIAN, Some(binPath))
-```
-
-**Python example**
-```python
-model_def = "/tmp/model/model.pb"
-model_variable = "/tmp/model/model.bin"
-inputs = ["Placeholder"]
-outputs = ["output"]
-# For tensorflow frozen graph or graph without Variables
-model = Net.load_tensorflow(model_def, inputs, outputs, byte_order = "little_endian", bigdl_type="float")
-
-# For tensorflow graph with Variables
-model = Net.load_tensorflow(model_def, inputs, outputs, byte_order = "little_endian", bigdl_type="float", bin_file=model_variable)
-```
-
 ## TFNet
 
 TFNet is a analytics-zoo layer that wraps a tensorflow frozen graph and can easily run in parallel.
-
-The difference between Net.loadTF() is that TFNet will call tensorflow's java api to do the computation.
 
 TFNet cannot be trained, so it can only be used for inference or as a feature extractor for fine tuning a model.
 When used as feature extractor, there should not be any trainable layers before TFNet, as all the gradient
 from TFNet is set to zero.
 
+__Remarks__:
 
-### Export tensorflow model to frozen inference graph
+- You need to install __tensorflow==1.15.0__ on your driver node.
+- Your operating system (OS) is required to be one of the following 64-bit systems:
+__Ubuntu 16.04 or later__ and __macOS 10.12.6 or later__.
+- To run on other systems, you need to manually compile the TensorFlow source code. Instructions can
+  be found [here](https://github.com/tensorflow/tensorflow/tree/v1.10.0/tensorflow/java).
 
-Analytics-zoo provides a useful utility function, `export_tf`, to export a tensorflow model
+
+### Export TensorFlow model to frozen inference graph
+
+Analytics-zoo provides a useful utility function, `export_tf`, to export a TensorFlow model
 to frozen inference graph.
 
 For example:
@@ -172,12 +110,12 @@ from zoo.util.tf import export_tf
 export_tf(sess, "/tmp/models/tfnet", inputs=[images], outputs=[logits])
 ```
 
-In the above code, the `export_tf` utility function will frozen the tensorflow graph, strip unused operation according to the inputs and outputs and save it to the specified directory along with the input/output tensor names. 
+In the above code, the `export_tf` utility function will frozen the TensorFlow graph, strip unused operation according to the inputs and outputs and save it to the specified directory along with the input/output tensor names. 
 
 
 ### Creating a TFNet
 
-After we have export the tensorflow model, we can easily create a TFNet.
+After we have export the TensorFlow model, we can easily create a TFNet.
 
 **Scala:**
 ```scala
@@ -188,47 +126,6 @@ val m = TFNet("/tmp/models/tfnet")
 m = TFNet.from_export_folder("/tmp/models/tfnet")
 ```
 
-Please refer to [TFNet Object Detection Example](https://github.com/intel-analytics/analytics-zoo/tree/master/zoo/src/main/scala/com/intel/analytics/zoo/examples/tensorflow/tfnet) and
+Please refer to [TFNet Object Detection Example (Scala)](https://github.com/intel-analytics/analytics-zoo/tree/master/zoo/src/main/scala/com/intel/analytics/zoo/examples/tensorflow/tfnet)
+or [TFNet Object Detection Example (Python)](https://github.com/intel-analytics/analytics-zoo/tree/master/pyzoo/zoo/examples/tensorflow/tfnet) and
 the [Image Classification Using TFNet Notebook](https://github.com/intel-analytics/analytics-zoo/tree/master/apps/tfnet) for more information.
-
-
-## TFDataset
-
-TFDatset represents a distributed collection of elements to be feed into Tensorflow graph.
-TFDatasets can be created using a RDD and each of its records is a list of numpy.ndarray representing
-the tensors to be feed into tensorflow graph on each iteration. TFDatasets must be used with the
-TFOptimizer or TFPredictor.
-
-**Python**
-```python
-   dataset = TFDataset.from_rdd(train_rdd,
-                                 names=["features", "labels"],
-                                 shapes=[[28, 28, 1], [1]],
-                                 types=[tf.float32, tf.int32],
-                                 batch_size=BATCH_SIZE)
-```
-
-## TFOptimizer
-TFOptimizer is the class that does all the hard work in distributed training, such as model
-distribution and parameter synchronization. It takes the **loss** (a scalar tensor) as input and runs
-stochastic gradient descent using the given **optimMethod** on all the **Variables** that contributing
-to this loss.
-
-**Python**
-```python
-optimizer = TFOptimizer(loss, Adam(1e-3))
-optimizer.set_train_summary(TrainSummary("/tmp/az_lenet", "lenet"))
-optimizer.optimize(end_trigger=MaxEpoch(5))
-```
-
-## TFPredictor
-
-TFPredictor takes a list of tensorflow tensors as the model outputs and feed all the elements in
- TFDatasets to produce those outputs and returns a Spark RDD with each of its elements representing the
- model prediction for the corresponding input elements.
- 
-**Python**
-```python
-predictor = TFPredictor(sess, [logits])
-predictions_rdd = predictor.predict()
-```

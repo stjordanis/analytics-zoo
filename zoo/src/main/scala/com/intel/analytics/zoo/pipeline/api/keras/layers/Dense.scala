@@ -59,21 +59,39 @@ class Dense[T: ClassTag](
   override val inputShape: Shape = null)(implicit ev: TensorNumeric[T])
   extends BigDLDense[T](outputDim, init, activation, wRegularizer, bRegularizer, bias,
     inputShape) with Net {
+
+  override private[zoo] def toKeras2(): String = {
+    val params = Net.inputShapeToString(inputShape) ++
+      Net.activationToString(activation) ++
+      Net.param(getName()) ++
+      Net.param(bias, "use_bias") ++
+      Net.param(outputDim, "units")
+    Net.kerasDef(this, params)
+  }
+
+  override private[zoo] def getKerasWeights(): Array[Tensor[Float]] = {
+    val weights = this.parameters()._1
+    val kWeights = Array.tabulate(weights.length)(_ => Tensor[Float]())
+    weights(0) = weights(0).t().contiguous()
+    weights(0).cast[Float](kWeights(0).resizeAs(weights(0)))
+    weights(1).cast[Float](kWeights(1).resizeAs(weights(1)))
+    kWeights
+  }
 }
 
 object Dense {
   def apply[@specialized(Float, Double) T: ClassTag](
     outputDim: Int,
     init: String = "glorot_uniform",
+    limits: Array[Double] = null,
     activation: String = null,
     wRegularizer: Regularizer[T] = null,
     bRegularizer: Regularizer[T] = null,
     bias: Boolean = true,
     inputShape: Shape = null)(implicit ev: TensorNumeric[T]): Dense[T] = {
-    new Dense[T](outputDim, KerasUtils.getInitMethod(init),
+    val initValue = KerasUtils.getInitMethod(init, limits)
+    new Dense[T](outputDim, initValue,
       KerasUtils.getKerasActivation(activation),
       wRegularizer, bRegularizer, bias, inputShape)
   }
 }
-
-

@@ -21,7 +21,8 @@ from keras.models import Sequential as KSequential
 from test.zoo.pipeline.utils.test_utils import ZooTestCase
 import zoo.pipeline.api.keras.layers as ZLayer
 from zoo.pipeline.api.keras.models import Model as ZModel
-from zoo.pipeline.api.net import Net, TFNet
+from zoo.pipeline.api.keras.models import Sequential as ZSequential
+from zoo.pipeline.api.net import Net
 from bigdl.nn.layer import Linear, Sigmoid, SoftMax, Model as BModel
 from bigdl.util.common import *
 from bigdl.nn.layer import Sequential
@@ -52,16 +53,46 @@ class TestLayer(ZooTestCase):
         model2.freeze_up_to(["conv2"])
         model2.unfreeze()
 
+    def test_deprecated_save(self):
+        with pytest.raises(Exception) as e_info:
+            input = ZLayer.Input(shape=(5,))
+            output = ZLayer.Dense(10)(input)
+            zmodel = ZModel(input, output, name="graph1")
+            zmodel.save(create_tmp_path())
+
+    def test_save_load_Model(self):
+        input = ZLayer.Input(shape=(5,))
+        output = ZLayer.Dense(10)(input)
+        zmodel = ZModel(input, output, name="graph1")
+        tmp_path = create_tmp_path()
+        zmodel.saveModel(tmp_path, None, True)
+        model_reloaded = Net.load(tmp_path)
+        input_data = np.random.random([10, 5])
+        y = np.random.random([10, 10])
+        model_reloaded.compile(optimizer="adam",
+                               loss="mse")
+        model_reloaded.fit(x=input_data, y=y, batch_size=8, nb_epoch=2)
+
+    def test_save_load_Sequential(self):
+        zmodel = ZSequential()
+        dense = ZLayer.Dense(10, input_dim=5)
+        zmodel.add(dense)
+        tmp_path = create_tmp_path()
+        zmodel.saveModel(tmp_path, None, True)
+        model_reloaded = Net.load(tmp_path)
+        input_data = np.random.random([10, 5])
+        y = np.random.random([10, 10])
+        model_reloaded.compile(optimizer="adam",
+                               loss="mse")
+        model_reloaded.fit(x=input_data, y=y, batch_size=8, nb_epoch=1)
+
     def test_load(self):
         input = ZLayer.Input(shape=(5,))
         output = ZLayer.Dense(10)(input)
         zmodel = ZModel(input, output, name="graph1")
-
         tmp_path = create_tmp_path()
         zmodel.saveModel(tmp_path, None, True)
-
         model_reloaded = Net.load(tmp_path)
-
         input_data = np.random.random([3, 5])
         self.compare_output_and_grad_input(zmodel, model_reloaded, input_data)
 
@@ -81,22 +112,6 @@ class TestLayer(ZooTestCase):
         zmodel2 = Net.load_keras(hdf5_path=tmp_path_hdf5)
         assert isinstance(zmodel2, Sequential)
 
-    def test_load_tf(self):
-        linear = Linear(10, 2)()
-        sigmoid = Sigmoid()(linear)
-        softmax = SoftMax().set_name("output")(sigmoid)
-        model = BModel(linear, softmax)
-        input = np.random.random((4, 10))
-
-        tmp_path = create_tmp_path() + "/model.pb"
-
-        model.save_tensorflow([("input", [4, 10])], tmp_path)
-
-        model_reloaded = Net.load_tf(tmp_path, ["input"], ["output"])
-        expected_output = model.forward(input)
-        output = model_reloaded.forward(input)
-        self.assert_allclose(output, expected_output)
-
     def test_layers_method(self):
         resource_path = os.path.join(os.path.split(__file__)[0], "../../../resources")
         model_path = os.path.join(resource_path, "models/bigdl/bigdl_lenet.model")
@@ -109,44 +124,6 @@ class TestLayer(ZooTestCase):
         model = Net.load_bigdl(model_path)
 
         assert len(Sequential().add(model).flattened_layers()) == 12
-
-    def test_tf_net(self):
-        resource_path = os.path.join(os.path.split(__file__)[0], "../../../resources")
-        tfnet_path = os.path.join(resource_path, "tfnet")
-        net = TFNet.from_export_folder(tfnet_path)
-        output = net.forward(np.random.rand(2, 4))
-        assert output.shape == (2, 2)
-
-    def test_load_tf_from_folder(self):
-        resource_path = os.path.join(os.path.split(__file__)[0], "../../../resources")
-        tfnet_path = os.path.join(resource_path, "tfnet")
-        net = Net.load_tf(tfnet_path)
-        output = net.forward(np.random.rand(2, 4))
-        assert output.shape == (2, 2)
-
-    def test_init_tfnet_from_session(self):
-        import tensorflow as tf
-        input1 = tf.placeholder(dtype=tf.float32, shape=(None, 2))
-        label1 = tf.placeholder(dtype=tf.float32, shape=(None, 1))
-        hidden = tf.layers.dense(input1, 4)
-        output = tf.layers.dense(hidden, 1)
-        loss = tf.reduce_mean(tf.square(output - label1))
-        grad_inputs = tf.gradients(loss, input1)
-        sess = tf.Session()
-        sess.run(tf.global_variables_initializer())
-        data = np.random.rand(2, 2)
-        output_value_ref = sess.run(output, feed_dict={input1: data})
-        label_value = output_value_ref - 1.0
-        grad_input_value_ref = sess.run(grad_inputs[0],
-                                        feed_dict={input1: data,
-                                                   label1: label_value})
-        net = TFNet.from_session(sess, [input1], [output], generate_backward=True)
-        output_value = net.forward(data)
-
-        grad_input_value = net.backward(data, np.ones(shape=(2, 1)))
-
-        self.assert_allclose(output_value, output_value_ref)
-        self.assert_allclose(grad_input_value, grad_input_value_ref)
 
 
 if __name__ == "__main__":

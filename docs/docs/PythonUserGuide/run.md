@@ -1,8 +1,9 @@
-You need to first [install](install.md) analytics-zoo, either [from pip](install/#install-from-pip) or [without pip](install/#install-without-pip).
+You need to first [install](install.md) analytics-zoo, either [from pip](install/#install-from-pip-for-local-usage) or [without pip](install/#install-without-pip).
 
-**NOTE**: Only __Python 2.7__, __Python 3.5__ and __Python 3.6__ are supported for now.
+**NOTE**: We have tested on __Python 3.6__ and __Python 3.7__. Support for Python 2.7 has been removed due to its end of life.
 
 ---
+
 ## **Run after pip install**
 
 **Important:**
@@ -49,6 +50,27 @@ export BIGDL_PACKAGES=...
 ```
 
 ---
+## **Run on Yarn after pip install**
+
+You should use `init_spark_on_yarn` rather than `init_nncontext()` here to create a SparkContext on Yarn.
+
+Start python and then execute the following code:
+
+``` python
+from zoo import init_spark_on_yarn
+
+sc = init_spark_on_yarn(
+    hadoop_conf="path to the yarn configuration folder",
+    conda_name="zoo", # The name of the created conda-env
+    num_executor=2,
+    executor_cores=4,
+    executor_memory="8g",
+    driver_memory="2g",
+    driver_cores=4,
+    extra_executor_memory_for_ray="10g")
+```
+
+---
 ## **Run without pip install**
 - Note that __Python 3.6__ is only compatible with Spark 1.6.4, 2.0.3, 2.1.1 and >=2.2.0. See [this issue](https://issues.apache.org/jira/browse/SPARK-19019) for more discussion.
 
@@ -74,7 +96,7 @@ in `spark-submit/pyspark`, you can add these customized properties into ${ANALYT
 ---
 #### ***Run with pyspark***
 ```bash
-${ANALYTICS_ZOO_HOME}/bin/pyspark-with-zoo.sh --master local[*]
+${ANALYTICS_ZOO_HOME}/bin/pyspark-shell-with-zoo.sh --master local[*]
 ```
 * `--master` set the master URL to connect to
 * `--jars` if there are extra jars needed.
@@ -92,7 +114,7 @@ running the Analytics Zoo [Object Detection Python example](https://github.com/i
 as follows:
 
 ```bash
-${ANALTICS_ZOO_HOME}/bin/spark-submit-with-zoo.sh --master local[*] predict.py model_path image_path output_path
+${ANALTICS_ZOO_HOME}/bin/spark-submit-python-with-zoo.sh --master local[*] predict.py model_path image_path output_path
 ```
 
 ---
@@ -128,65 +150,48 @@ the dashboard URL is http://your_node:8888/
 Try to run the [example code](#example-code) for verification.
 
 ---
-#### ***Run with virtual environment on Yarn***
+#### ***Run with conda environment on Yarn***
 
-If you have already created Analytics Zoo dependency virtual environment according to Yarn cluster guide [here](install/#for-yarn-cluster),
+If you have already created Analytics Zoo dependency conda environment package according to Yarn cluster guide [here](install/#for-yarn-cluster),
 you can run Python programs using Analytics Zoo using the following command.
 
 Here we use Analytics Zoo [Object Detection Python example](https://github.com/intel-analytics/analytics-zoo/tree/master/pyzoo/zoo/examples/objectdetection) for illustration.
 
-* Yarn cluster mode
-```
-    SPARK_HOME=the root directory of Spark
-    ANALYTICS_ZOO_ROOT=the root directory of the Analytics Zoo project
-    ANALYTICS_ZOO_HOME=$ANALYTICS_ZOO_ROOT/dist
-    ANALYTICS_ZOO_PY_ZIP=${ANALYTICS_ZOO_HOME}/lib/analytics-zoo-VERSION-python-api.zip
-    ANALYTICS_ZOO_JAR=${ANALYTICS_ZOO_HOME}/lib/analytics-zoo-VERSION-jar-with-dependencies.jar
-    ANALYTICS_ZOO_CONF=${ANALYTICS_ZOO_HOME}/conf/spark-analytics-zoo.conf
-    PYTHONPATH=${ANALYTICS_ZOO_PY_ZIP}:$PYTHONPATH
-    VENV_HOME=the parent directory of venv.zip and venv folder
-    
-    PYSPARK_PYTHON=${VENV_HOME}/venv.zip/venv/bin/python ${SPARK_HOME}/bin/spark-submit \
-    --conf spark.yarn.appMasterEnv.PYSPARK_PYTHON=${VENV_HOME}/venv.zip/venv/bin/python \
+* Yarn cluster mode (with conda package name "environment.tar.gz" for example)
+```bash
+export SPARK_HOME=the root directory of Spark
+export ANALYTICS_ZOO_HOME=the folder where you extract the downloaded Analytics Zoo zip package
+export ENV_HOME=the parent directory of your conda environment package
+
+PYSPARK_PYTHON=./environment/bin/python ${ANALYTICS_ZOO_HOME}/bin/spark-submit-python-with-zoo.sh \
+    --conf spark.yarn.appMasterEnv.PYSPARK_PYTHON=./environment/bin/python \
     --master yarn-cluster \
     --executor-memory 10g \
     --driver-memory 10g \
     --executor-cores 8 \
     --num-executors 2 \
-    --properties-file ${ANALYTICS_ZOO_CONF} \
-    --jars ${ANALYTICS_ZOO_JAR} \
-    --py-files ${ANALYTICS_ZOO_PY_ZIP} \
-    --archives ${VENV_HOME}/venv.zip \
-    --conf spark.driver.extraClassPath=${ANALYTICS_ZOO_JAR} \
-    --conf spark.executor.extraClassPath=${ANALYTICS_ZOO_JAR} \
-    ${ANALYTICS_ZOO_ROOT}/pyzoo/zoo/examples/objectdetection/predict.py model_path image_path output_path
+    --archives ${ENV_HOME}/environment.tar.gz#environment \
+    predict.py model_path image_path output_path
 ```
 
-* Yarn client mode
-```
-    SPARK_HOME=the root directory of Spark
-    ANALYTICS_ZOO_ROOT=the root directory of the Analytics Zoo project
-    ANALYTICS_ZOO_HOME=$ANALYTICS_ZOO_ROOT/dist
-    ANALYTICS_ZOO_PY_ZIP=${ANALYTICS_ZOO_HOME}/lib/analytics-zoo-VERSION-python-api.zip
-    ANALYTICS_ZOO_JAR=${ANALYTICS_ZOO_HOME}/lib/analytics-zoo-VERSION-jar-with-dependencies.jar
-    ANALYTICS_ZOO_CONF=${ANALYTICS_ZOO_HOME}/conf/spark-analytics-zoo.conf
-    PYTHONPATH=${ANALYTICS_ZOO_PY_ZIP}:$PYTHONPATH
-    VENV_HOME=the parent directory of venv.zip and venv folder
-    
-    PYSPARK_DRIVER_PYTHON=${VENV_HOME}/venv/bin/python PYSPARK_PYTHON=${VENV_HOME}/venv.zip/venv/bin/python ${SPARK_HOME}/bin/spark-submit \
+* Yarn client mode (with conda package name "environment.tar.gz" for example)
+```bash
+export SPARK_HOME=the root directory of Spark
+export ANALYTICS_ZOO_HOME=the folder where you extract the downloaded Analytics Zoo zip package
+export ENV_HOME=the parent directory of your conda environment package
+
+mkdir ${ENV_HOME}/environment
+tar -xzf ${ENV_HOME}/environment.tar.gz -C ${ENV_HOME}/environment
+
+PYSPARK_DRIVER_PYTHON=${ENV_HOME}/environment/bin/python PYSPARK_PYTHON=./environment/bin/python ${ANALYTICS_ZOO_HOME}/bin/spark-submit-python-with-zoo.sh \
     --master yarn \
     --deploy-mode client \
     --executor-memory 10g \
     --driver-memory 10g \
     --executor-cores 16 \
     --num-executors 2 \
-    --properties-file ${ANALYTICS_ZOO_CONF} \
-    --jars ${ANALYTICS_ZOO_JAR} \
-    --py-files ${ANALYTICS_ZOO_PY_ZIP} \
-    --archives ${VENV_HOME}/venv.zip \
-    --conf spark.driver.extraClassPath=${ANALYTICS_ZOO_JAR} \
-    --conf spark.executor.extraClassPath=${ANALYTICS_ZOO_JAR} \
-    ${ANALYTICS_ZOO_ROOT}/pyzoo/zoo/examples/objectdetection/predict.py model_path image_path output_path
+    --archives ${ENV_HOME}/environment.tar.gz#environment \
+    predict.py model_path image_path output_path
 ```
 
 ---
@@ -195,13 +200,13 @@ Here we use Analytics Zoo [Object Detection Python example](https://github.com/i
 To verify if Analytics Zoo can run successfully, run the following simple code:
 
 ```python
-import zoo.version
+import zoo
 from zoo.common.nncontext import *
 from zoo.pipeline.api.keras.models import *
 from zoo.pipeline.api.keras.layers import *
 
 # Get the current Analytics Zoo version
-zoo.version.__version__
+zoo.__version__
 # Create a SparkContext and initialize the BigDL engine.
 sc = init_nncontext()
 # Create a Sequential model containing a Dense layer.

@@ -22,6 +22,7 @@ import java.util.Properties
 import com.intel.analytics.bigdl.utils.Engine
 import org.apache.log4j.Logger
 import org.apache.spark.{SPARK_VERSION, SparkConf, SparkContext, SparkException}
+import sys.env
 
 /**
  * [[NNContext]] wraps a spark context in Analytics Zoo.
@@ -131,6 +132,8 @@ object NNContext {
    */
   def initNNContext(conf: SparkConf, appName: String): SparkContext = {
     val zooConf = createSparkConf(conf)
+    initConf(zooConf)
+
     if (appName != null) {
       zooConf.setAppName(appName)
     }
@@ -194,6 +197,43 @@ object NNContext {
     lines.map(_.split("\\s+")).map(d => (d(0), d(1))).toSeq
       .filter(_._1 != "spark.shuffle.blockTransferService" ||
         System.getProperty("bigdl.network.nio", "true").toBoolean)
+  }
+
+  /**
+   * Spark conf with pre-set env
+   * Currently, focus on KMP_AFFINITY, KMP_BLOCKTIME
+   * KMP_SETTINGS, OMP_NUM_THREADS and ZOO_NUM_MKLTHREADS
+   *
+   * @param zooConf SparkConf
+   */
+  private[zoo] def initConf(zooConf: SparkConf) : Unit = {
+    // check env and set spark conf
+    // Set default value
+    // We should skip this env, when engineType is mkldnn.
+    if (System.getProperty("bigdl.engineType", "mklblas")
+      .toLowerCase() == "mklblas") {
+      // Set value with env
+      val kmpAffinity = env.getOrElse("KMP_AFFINITY", "granularity=fine,compact,1,0")
+      val kmpBlockTime = env.getOrElse("KMP_BLOCKTIME", "0")
+      val kmpSettings = env.getOrElse("KMP_SETTINGS", "1")
+      val ompNumThreads = if (env.contains("ZOO_NUM_MKLTHREADS")) {
+        if (env("ZOO_NUM_MKLTHREADS").equalsIgnoreCase("all")) {
+          zooConf.get("spark.executor.cores", Runtime.getRuntime.availableProcessors().toString)
+        } else {
+          env("ZOO_NUM_MKLTHREADS")
+        }
+      } else if (env.contains("OMP_NUM_THREADS")) {
+        env("OMP_NUM_THREADS")
+      } else {
+        "1"
+      }
+      // Set Spark Conf
+      zooConf.setExecutorEnv("KMP_AFFINITY", kmpAffinity)
+      zooConf.setExecutorEnv("KMP_BLOCKTIME", kmpBlockTime)
+      zooConf.setExecutorEnv("KMP_SETTINGS", kmpSettings)
+      zooConf.setExecutorEnv("OMP_NUM_THREADS", ompNumThreads)
+    }
+
   }
 
   def createSparkConf(existingConf: SparkConf = null) : SparkConf = {

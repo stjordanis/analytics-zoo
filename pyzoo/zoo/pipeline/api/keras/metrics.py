@@ -37,13 +37,28 @@ class AUC(JavaValue):
         JavaValue.__init__(self, None, bigdl_type, threshold_num)
 
 
+class MAE(ZooKerasCreator, JavaValue):
+    """
+    Metric for mean absoluate error, similar from MAE criterion
+
+    >>> mae = MAE()
+    creating: createZooKerasMAE
+
+    """
+    def __init__(self, bigdl_type="float"):
+        super(MAE, self).__init__(None, bigdl_type)
+
+
 class Accuracy(ZooKerasCreator, JavaValue):
     """
-    Measures top1 accuracy for classification problems.
+    Measures top1 accuracy for multi-class classification
+    or accuracy for binary classification.
 
     # Arguments
     zero_based_label: Boolean. Whether target labels start from 0. Default is True.
                       If False, labels start from 1.
+                      Note that this only takes effect for multi-class classification.
+                      For binary classification, labels ought to be 0 or 1.
 
     >>> acc = Accuracy()
     creating: createZooKerasAccuracy
@@ -53,9 +68,42 @@ class Accuracy(ZooKerasCreator, JavaValue):
                                        zero_based_label)
 
 
+class SparseCategoricalAccuracy(ZooKerasCreator, JavaValue):
+    """
+    Measures top1 accuracy for multi-class classification with sparse target.
+
+    >>> acc = SparseCategoricalAccuracy()
+    creating: createZooKerasSparseCategoricalAccuracy
+    """
+    def __init__(self, bigdl_type="float"):
+        super(SparseCategoricalAccuracy, self).__init__(None, bigdl_type)
+
+
+class CategoricalAccuracy(ZooKerasCreator, JavaValue):
+    """
+    Measures top1 accuracy for multi-class classification when target is one-hot encoded.
+
+    >>> acc = CategoricalAccuracy()
+    creating: createZooKerasCategoricalAccuracy
+    """
+    def __init__(self, bigdl_type="float"):
+        super(CategoricalAccuracy, self).__init__(None, bigdl_type)
+
+
+class BinaryAccuracy(ZooKerasCreator, JavaValue):
+    """
+    Measures top1 accuracy for binary classification with zero-based index.
+
+    >>> acc = BinaryAccuracy()
+    creating: createZooKerasBinaryAccuracy
+    """
+    def __init__(self, bigdl_type="float"):
+        super(BinaryAccuracy, self).__init__(None, bigdl_type)
+
+
 class Top5Accuracy(ZooKerasCreator, JavaValue):
     """
-    Measures top5 accuracy for classification problems.
+    Measures top5 accuracy for multi-class classification.
 
     # Arguments
     zero_based_label: Boolean. Whether target labels start from 0. Default is True.

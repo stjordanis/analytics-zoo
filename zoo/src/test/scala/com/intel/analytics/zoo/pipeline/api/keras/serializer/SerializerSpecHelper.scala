@@ -34,13 +34,21 @@ abstract class SerializerSpecHelper extends FlatSpec with Matchers with BeforeAn
   private val excluded = Set[String](
     "com.intel.analytics.zoo.pipeline.api.autograd.LambdaTorch",
     "com.intel.analytics.zoo.pipeline.api.net.TFNet",
+    "com.intel.analytics.zoo.pipeline.api.net.TorchNet",
+    "com.intel.analytics.zoo.pipeline.api.net.TorchModel",
     "com.intel.analytics.zoo.pipeline.api.keras.layers.internal.Recurrent",
     "com.intel.analytics.zoo.pipeline.api.keras.layers.internal.InternalRecurrent",
     "com.intel.analytics.zoo.pipeline.api.keras.layers.internal.InternalCAddTable",
     "com.intel.analytics.zoo.pipeline.api.autograd.InternalParameter",
     "com.intel.analytics.zoo.pipeline.api.autograd.KerasParameter",
+    "com.intel.analytics.zoo.pipeline.api.autograd.KerasConstant",
+    "com.intel.analytics.zoo.pipeline.api.autograd.InternalConstant",
     "com.intel.analytics.zoo.pipeline.api.keras.layers.internal.InternalRecurrent",
-    "com.intel.analytics.zoo.pipeline.api.net.TFTrainingHelper")
+    "com.intel.analytics.zoo.pipeline.api.keras.layers.InternalGetShape",
+    "com.intel.analytics.zoo.tfpark.TFTrainingHelper",
+    "com.intel.analytics.zoo.tfpark.TFTrainingHelperV2",
+    "com.intel.analytics.zoo.pipeline.api.net.TFNetForInference",
+    "com.intel.analytics.zoo.tfpark.TFSubGraph")
 
   private val unRegularNameMapping = Map[String, String]()
 

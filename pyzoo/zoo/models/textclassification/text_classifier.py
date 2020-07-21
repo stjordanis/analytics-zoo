@@ -18,9 +18,8 @@ import warnings
 
 from zoo.pipeline.api.keras.models import Sequential
 from zoo.pipeline.api.keras.layers import *
-from zoo.models.common.zoo_model import ZooModel
-from bigdl.util.common import callBigDlFunc
-
+from zoo.models.common import ZooModel
+from zoo.common.utils import callZooFunc
 
 if sys.version >= '3':
     long = int
@@ -29,15 +28,15 @@ if sys.version >= '3':
 
 class TextClassifier(ZooModel):
     """
-    The model used for text classification.
+    The model used for text classification with WordEmbedding as its first layer.
 
     # Arguments
     class_num: The number of text categories to be classified. Positive int.
-    embedding_file: The path to the embedding file.
+    embedding_file: The path to the word embedding file.
                     Currently only the following GloVe files are supported:
                     "glove.6B.50d.txt", "glove.6B.100d.txt", "glove.6B.200d.txt"
                     "glove.6B.300d.txt", "glove.42B.300d.txt", "glove.840B.300d.txt".
-                    You can download them from: https://nlp.stanford.edu/projects/glove/.
+                    You can download from: https://nlp.stanford.edu/projects/glove/.
     word_index: Dictionary of word (string) and its corresponding index (int).
                 The index is supposed to start from 1 with 0 reserved for unknown words.
                 During the prediction, if you have words that are not in the word_index
@@ -50,6 +49,7 @@ class TextClassifier(ZooModel):
              Default is 'cnn'.
     encoder_output_dim: The output dimension for the encoder. Positive int. Default is 256.
     """
+
     def __init__(self, class_num, embedding_file, word_index=None, sequence_length=500,
                  encoder="cnn", encoder_output_dim=256, **kwargs):
         if 'token_length' in kwargs:
@@ -109,7 +109,68 @@ class TextClassifier(ZooModel):
               Amazon S3 path should be like 's3a://bucket/xxx'.
         weight_path: The path for pre-trained weights if any. Default is None.
         """
-        jmodel = callBigDlFunc(bigdl_type, "loadTextClassifier", path, weight_path)
+        jmodel = callZooFunc(bigdl_type, "loadTextClassifier", path, weight_path)
         model = ZooModel._do_load(jmodel, bigdl_type)
         model.__class__ = TextClassifier
         return model
+
+    # For the following methods, please refer to KerasNet for documentation.
+    def compile(self, optimizer, loss, metrics=None):
+        if isinstance(optimizer, six.string_types):
+            optimizer = to_bigdl_optim_method(optimizer)
+        if isinstance(loss, six.string_types):
+            loss = to_bigdl_criterion(loss)
+        if metrics and all(isinstance(metric, six.string_types) for metric in metrics):
+            metrics = to_bigdl_metrics(metrics, loss)
+        callZooFunc(self.bigdl_type, "textClassifierCompile",
+                    self.value,
+                    optimizer,
+                    loss,
+                    metrics)
+
+    def set_tensorboard(self, log_dir, app_name):
+        callZooFunc(self.bigdl_type, "textClassifierSetTensorBoard",
+                    self.value,
+                    log_dir,
+                    app_name)
+
+    def set_checkpoint(self, path, over_write=True):
+        callZooFunc(self.bigdl_type, "textClassifierSetCheckpoint",
+                    self.value,
+                    path,
+                    over_write)
+
+    def fit(self, x, batch_size=32, nb_epoch=10, validation_data=None):
+        """
+        Fit on TextSet.
+        """
+        assert isinstance(x, TextSet), "x should be a TextSet"
+        if validation_data:
+            assert isinstance(validation_data, TextSet), "validation_data should be a TextSet"
+        callZooFunc(self.bigdl_type, "textClassifierFit",
+                    self.value,
+                    x,
+                    batch_size,
+                    nb_epoch,
+                    validation_data)
+
+    def evaluate(self, x, batch_size=32):
+        """
+        Evaluate on TextSet.
+        """
+        assert isinstance(x, TextSet), "x should be a TextSet"
+        return callZooFunc(self.bigdl_type, "textClassifierEvaluate",
+                           self.value,
+                           x,
+                           batch_size)
+
+    def predict(self, x, batch_per_thread=4):
+        """
+        Predict on TextSet.
+        """
+        assert isinstance(x, TextSet), "x should be a TextSet"
+        results = callZooFunc(self.bigdl_type, "textClassifierPredict",
+                              self.value,
+                              x,
+                              batch_per_thread)
+        return TextSet(results)

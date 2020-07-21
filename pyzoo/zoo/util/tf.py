@@ -14,16 +14,31 @@
 # limitations under the License.
 #
 
-from tensorflow.core.framework import attr_value_pb2
-from tensorflow.core.framework import graph_pb2
-from tensorflow.core.framework import node_def_pb2
-from tensorflow.python.framework import graph_util
-from tensorflow.python.framework import ops
-from tensorflow.python.platform import gfile
-import tensorflow as tf
 import os
 import json
 import copy
+
+
+def process_grad(grad):
+    from tensorflow.python.framework import ops
+    import tensorflow as tf
+    if grad is not None:
+        grad = ops.convert_to_tensor_or_indexed_slices(grad)
+        if isinstance(grad, ops.IndexedSlices):
+            # In IndexedSlices is not supported in java api, we have to convert it to
+            # a dense tensor. This operation is potentially expensive, but there seems
+            # no work around
+            grad = tf.unsorted_segment_sum(grad.values, grad.indices,
+                                           grad.dense_shape[0])
+    return grad
+
+
+def _to_operation_name(name):
+    return name.split(":")[0]
+
+
+def _to_floats(vs):
+    return [float(v) for v in vs]
 
 
 def export_tf(sess, folder, inputs, outputs,
@@ -47,6 +62,8 @@ def export_tf(sess, folder, inputs, outputs,
     :return:
     """
 
+    from tensorflow.python.platform import gfile
+    import tensorflow as tf
     output_node_names = list({t.op.name for t in outputs})
 
     graph_def = sess.graph_def
@@ -59,7 +76,7 @@ def export_tf(sess, folder, inputs, outputs,
     non_placeholder_input_names = []
     type_enums = []
     for input_tensor in inputs:
-        if input_tensor.op.type != "Placeholder":
+        if input_tensor.op.type not in ["Placeholder", "PlaceholderWithDefault"]:
             non_placeholder_input_names.append(input_tensor.name)
             type_enums.append(input_tensor.dtype.as_datatype_enum)
 
@@ -67,6 +84,7 @@ def export_tf(sess, folder, inputs, outputs,
 
     all_variables = graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
 
+    import zoo.util.tf_graph_util as graph_util
     # freeze graph
     frozen_graph_def = graph_util.convert_variables_to_constants(
         sess,
@@ -130,17 +148,6 @@ def export_tf(sess, folder, inputs, outputs,
             inputs = [g.get_tensor_by_name(x) for x in new_input_names]
             grads = tf.gradients(output_tensors, variables + inputs,
                                  grad_ys=grad_output_placeholders)
-
-            def process_grad(grad):
-                if grad is not None:
-                    grad = ops.convert_to_tensor_or_indexed_slices(grad)
-                    if isinstance(grad, ops.IndexedSlices):
-                        # In IndexedSlices is not supported in java api, we have to convert it to
-                        # a dense tensor. This operation is potentially expensive, but there seems
-                        # no work around
-                        grad = tf.unsorted_segment_sum(grad.values, grad.indices,
-                                                       grad.dense_shape[0])
-                return grad
 
             grads = [process_grad(grad) for grad in grads]
 
@@ -245,6 +252,10 @@ def strip_unused(input_graph_def, input_tensor_names, output_tensor_names,
       of an operation.
     KeyError: If any element in `input_node_names` is not found in the graph.
   """
+
+    from tensorflow.core.framework import attr_value_pb2
+    from tensorflow.core.framework import graph_pb2
+    from tensorflow.core.framework import node_def_pb2
     for name in input_tensor_names:
         if ":" not in name:
             raise ValueError("Input '%s' appears to refer to a Operation, "
@@ -287,7 +298,7 @@ def strip_unused(input_graph_def, input_tensor_names, output_tensor_names,
 
     if not_found:
         raise KeyError("The following input nodes were not found: %s\n" % not_found)
-
+    import zoo.util.tf_graph_util as graph_util
     output_graph_def = graph_util.extract_sub_graph(inputs_replaced_graph_def,
                                                     output_node_names)
     return output_graph_def, old2new

@@ -29,39 +29,40 @@ import com.intel.analytics.bigdl.utils.RandomGenerator.RNG
 import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
 import com.intel.analytics.zoo.feature.common._
 import com.intel.analytics.zoo.feature.image._
+import com.intel.analytics.zoo.pipeline.api.keras.ZooSpecHelper
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkContext
-import org.apache.spark.ml.feature.MinMaxScaler
+import org.apache.spark.ml.feature.{MinMaxScaler, VectorAssembler}
+import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.ml.param.ParamMap
 import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, SQLContext}
-import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
+import org.apache.spark.sql.types.{DoubleType, StringType, StructField, StructType}
+import org.apache.spark.sql.{DataFrame, SQLContext, SparkSession}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.io.Path
-import scala.util.Random
 
-class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
+class NNClassifierSpec extends ZooSpecHelper {
   var sc : SparkContext = _
   var sqlContext : SQLContext = _
   var smallData: Seq[(Array[Double], Double)] = _
   val nRecords = 100
   val maxEpoch = 20
 
-  before {
+  override def doBefore(): Unit = {
     val conf = Engine.createSparkConf().setAppName("Test NNClassifier").setMaster("local[1]")
     sc = SparkContext.getOrCreate(conf)
     sqlContext = new SQLContext(sc)
     smallData = NNEstimatorSpec.generateTestInput(
       nRecords, Array(1.0, 2.0, 3.0, 4.0, 5.0, 6.0), -1.0, 42L)
-    Random.setSeed(42)
-    RNG.setSeed(42)
+    val seed = System.currentTimeMillis()
+    RNG.setSeed(seed)
     Engine.init
   }
 
-  after{
+  override def doAfter(): Unit = {
     if (sc != null) {
       sc.stop()
     }
@@ -69,7 +70,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "has correct default params" in {
     val model = Linear[Float](10, 1)
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val estimator = NNClassifier(model, criterion, Array(10))
     assert(estimator.getFeaturesCol == "features")
     assert(estimator.getLabelCol == "label")
@@ -81,7 +82,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "apply with differnt params" in {
     val model = Linear[Float](6, 2)
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val data = sc.parallelize(smallData)
     val df = sqlContext.createDataFrame(data).toDF("features", "label")
 
@@ -94,7 +95,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "get reasonable accuracy" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val classifier = NNClassifier(model, criterion, Array(6))
       .setOptimMethod(new LBFGS[Float]())
       .setLearningRate(0.1)
@@ -128,7 +129,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "apply with size support different FEATURE types" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val classifier = NNClassifier(model, criterion, Array(6))
       .setLearningRate(0.1)
       .setBatchSize(2)
@@ -148,7 +149,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "support scalar FEATURE" in {
     val model = new Sequential().add(Linear[Float](1, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val classifier = NNClassifier(model, criterion, Array(1))
       .setLearningRate(0.1)
       .setBatchSize(2)
@@ -168,7 +169,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifier" should "fit with adam and LBFGS" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     Seq(new LBFGS[Float], new Adam[Float]).foreach { optimMethod =>
       val classifier = NNClassifier(model, criterion, Array(6))
         .setBatchSize(nRecords)
@@ -186,9 +187,9 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
     val data = sc.parallelize(smallData)
     val df = sqlContext.createDataFrame(data).toDF("features", "label")
 
-    val logdir = com.google.common.io.Files.createTempDir()
+    val logdir = createTmpDir()
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val classifier = NNClassifier(model, criterion, Array(6))
       .setBatchSize(nRecords)
       .setEndWhen(Trigger.maxIteration(5))
@@ -215,7 +216,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
       .setBatchSize(4)
 
     val tensorBuffer = new ArrayBuffer[Data]()
-    val input = Tensor[Float](10, 28, 28).apply1(e => Random.nextFloat())
+    val input = Tensor[Float](10, 28, 28).rand()
     val target = model.forward(input).toTensor[Float]
 
     // test against NNClassifierModel
@@ -240,7 +241,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
       val scaler = new MinMaxScaler().setInputCol("features").setOutputCol("scaled")
         .setMax(1).setMin(-1)
       val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-      val criterion = ClassNLLCriterion[Float]()
+      val criterion = ZooClassNLLCriterion[Float]()
       val estimator = NNClassifier(model, criterion)
         .setBatchSize(nRecords)
         .setOptimMethod(new LBFGS[Float]())
@@ -263,11 +264,28 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
     val transformer = RowToImageFeature() -> ImageResize(256, 256) -> ImageCenterCrop(224, 224) ->
       ImageChannelNormalize(123, 117, 104, 1, 1, 1) -> ImageMatToTensor() -> ImageFeatureToTensor()
 
-    val estimator = NNClassifier(Inception_v1(1000), ClassNLLCriterion[Float](), transformer)
+    val estimator = NNClassifier(Inception_v1(1000), ZooClassNLLCriterion[Float](), transformer)
       .setBatchSize(1)
       .setEndWhen(Trigger.maxIteration(1))
       .setFeaturesCol("image")
     estimator.fit(imageDF)
+  }
+
+  "NNClasifierModel" should "has default batchperthread as 4" in {
+    val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
+    val criterion = ZooClassNLLCriterion[Float]()
+    Seq(new LBFGS[Float], new Adam[Float]).foreach { optimMethod =>
+      val classifier = NNClassifier(model, criterion, Array(6))
+        .setBatchSize(nRecords)
+        .setMaxEpoch(2)
+        .setOptimMethod(optimMethod)
+        .setLearningRate(0.1)
+      val data = sc.parallelize(smallData)
+      val df = sqlContext.createDataFrame(data).toDF("features", "label")
+      val nnModel = classifier.fit(df)
+      nnModel.isInstanceOf[NNClassifierModel[_]] should be(true)
+      nnModel.getBatchSize should be(4)
+    }
   }
 
   "NNClasifierModel" should "return same results after saving and loading" in {
@@ -276,16 +294,10 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
     val nnModel = NNClassifierModel(module)
     val result = nnModel.transform(data).rdd.map(_.getAs[Double](2)).collect().sorted
 
-    val tmpFile = File.createTempFile("NNModel", "zoo")
-    val filePath = File.createTempFile("NNModel", "zoo").getPath + Random.nextLong().toString
+    val filePath = createTmpFile().getPath
     nnModel.setBatchSize(10).setFeaturesCol("test123").setPredictionCol("predict123")
     nnModel.write.overwrite().save(filePath)
-    val nnModel2 = try {
-      NNClassifierModel.load(filePath)
-    } finally {
-     Path(tmpFile).deleteRecursively()
-     Path(filePath).deleteRecursively()
-    }
+    val nnModel2 = NNClassifierModel.load(filePath)
     nnModel2.uid shouldEqual nnModel.uid
     nnModel2.getBatchSize shouldEqual nnModel.getBatchSize
     nnModel2.getFeaturesCol shouldEqual nnModel.getFeaturesCol
@@ -304,15 +316,19 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
       NNClassifierModel(model),
       NNClassifierModel(model, Array(6)),
       NNClassifierModel(model, SeqToTensor(Array(6)))
-    ).foreach(e => e.transform(df).count())
+    ).foreach { e =>
+      e.transform(df).count()
+      assert(e.getBatchSize == 4)
+    }
   }
 
   "NNClassifier" should "supports deep copy" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val data = sc.parallelize(
       smallData.map(p => (org.apache.spark.mllib.linalg.Vectors.dense(p._1), p._2)))
     val df: DataFrame = sqlContext.createDataFrame(data).toDF("features", "label")
+    val appName = System.nanoTime().toString
     val classifier = NNClassifier(model, criterion)
       .setBatchSize(31)
       .setOptimMethod(new LBFGS[Float]())
@@ -320,8 +336,8 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
       .setLearningRateDecay(0.432)
       .setMaxEpoch(13)
       .setFeaturesCol("abc")
-      .setTrainSummary(new TrainSummary("/tmp", "1"))
-      .setValidationSummary(new ValidationSummary("/tmp", "2"))
+      .setTrainSummary(new TrainSummary("/tmp", appName))
+      .setValidationSummary(new ValidationSummary("/tmp", appName))
       .setValidation(Trigger.maxIteration(3), df, Array(new Loss[Float]()), 2)
     val copied = classifier.copy(ParamMap.empty)
     assert(classifier.model ne copied.model)
@@ -356,7 +372,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifierModel" should "supports deep copy" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val data = sc.parallelize(
       smallData.map(p => (org.apache.spark.mllib.linalg.Vectors.dense(p._1), p._2)))
     val df: DataFrame = sqlContext.createDataFrame(data).toDF("abc", "la")
@@ -380,7 +396,7 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "NNClassifierModel" should "supports set Preprocessing" in {
     val model = new Sequential().add(Linear[Float](6, 2)).add(LogSoftMax[Float])
-    val criterion = ClassNLLCriterion[Float]()
+    val criterion = ZooClassNLLCriterion[Float]()
     val data = sc.parallelize(smallData)
     val df = sqlContext.createDataFrame(data).toDF("features", "label")
     val classifier = NNClassifier(model, criterion)
@@ -391,6 +407,64 @@ class NNClassifierSpec extends FlatSpec with Matchers with BeforeAndAfter {
     val newPreprocessing = ArrayToTensor(Array(6)) -> TensorToSample()
     nnModel.setSamplePreprocessing(newPreprocessing)
     assert(df.count() == nnModel.transform(df).count())
+  }
+
+  "XGBClassifierModel" should "work with sparse features" in {
+    val path = getClass.getClassLoader.getResource("XGBClassifier").getPath
+    val filePath = path + "/test.csv"
+    val modelPath = path + "/XGBClassifer.bin"
+    val spark = SparkSession.builder().getOrCreate()
+    val df = spark.read.format("csv")
+      .option("sep", ",")
+      .option("inferSchema", true)
+      .option("header", true)
+      .load(filePath)
+    val model = XGBClassifierModel.load(modelPath, 2)
+    model.setFeaturesCol(Array("age", "gender", "jointime", "star"))
+    model.transform(df).count()
+  }
+
+  "XGBClassifierModel" should "work with dense features" in {
+    val path = getClass.getClassLoader.getResource("XGBClassifier").getPath
+    val filePath = path + "/iris.data"
+    val modelPath = path + "/XGBClassifer.bin"
+
+    val spark = SparkSession.builder().getOrCreate()
+    val schema = new StructType(Array(
+      StructField("sepal length", DoubleType, true),
+      StructField("sepal width", DoubleType, true),
+      StructField("petal length", DoubleType, true),
+      StructField("petal width", DoubleType, true),
+      StructField("class", StringType, true)))
+    val df = spark.read.schema(schema).csv(filePath)
+
+    val model = XGBClassifierModel.load(modelPath, 2)
+    model.setFeaturesCol(Array("sepal length", "sepal width", "petal length", "petal width"))
+    model.transform(df).count()
+  }
+
+  "XGBRegressorModel" should "work" in {
+    val path = getClass.getClassLoader.getResource("XGBClassifier").getPath
+    val filePath = path + "/regressor.csv"
+    val modelPath = path + "/xgbregressor0.model"
+
+    val spark = SparkSession.builder().getOrCreate()
+    val df = spark.read.format("csv")
+      .option("sep", ",")
+      .option("inferSchema", true)
+      .option("header", true)
+      .load(filePath)
+
+    val vectorAssembler = new VectorAssembler()
+      .setInputCols(Array("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+      .setOutputCol("features_vec")
+    val data = vectorAssembler.transform(df)
+    val asDense = udf((v: Vector) => v.toDense)
+    val xgbInput = data.withColumn("features", asDense(col("features_vec")))
+
+    val model = XGBRegressorModel.loadFromXGB(modelPath)
+
+    model.transform(xgbInput).count()
   }
 }
 

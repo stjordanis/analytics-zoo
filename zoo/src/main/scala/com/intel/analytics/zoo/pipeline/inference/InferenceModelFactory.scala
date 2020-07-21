@@ -16,95 +16,139 @@
 
 package com.intel.analytics.zoo.pipeline.inference
 
-import com.intel.analytics.bigdl.Module
-import com.intel.analytics.bigdl.optim.LocalPredictor
-import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.zoo.pipeline.api.net.TFNet
+import com.intel.analytics.zoo.pipeline.inference.DeviceType.DeviceTypeEnumVal
 
-import scala.collection.mutable.ArrayBuffer
-import scala.reflect.ClassTag
+object InferenceModelFactory extends InferenceSupportive {
 
-object InferenceModelFactory {
-
-  def loadFloatInferenceModel(modelPath: String): FloatInferenceModel = {
-    loadFloatInferenceModel(modelPath, null)
+  def loadFloatModelForBigDL(modelPath: String): FloatModel = {
+    loadFloatModelForBigDL(modelPath, null, false)
   }
 
-  def loadFloatInferenceModel(modelPath: String, weightPath: String)
-  : FloatInferenceModel = {
-    val model = ModelLoader.loadFloatModel(modelPath, weightPath)
+  def loadFloatModelForBigDL(modelPath: String, weightPath: String, blas: Boolean = true)
+  : FloatModel = {
+    val model = if (blas) {
+      ModelLoader.loadFloatModel(modelPath, weightPath)
+    } else {
+      ModelLoader.loadFloatModel(modelPath, weightPath).quantize()
+    }
+
     model.evaluate()
-    new FloatInferenceModel(model)
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  def loadFloatInferenceModelForCaffe(modelPath: String, weightPath: String)
-  : FloatInferenceModel = {
-    val model = ModelLoader.loadFloatModelForCaffe(modelPath, weightPath)
+  def loadFloatModelForCaffe(modelPath: String,
+                             weightPath: String,
+                             blas: Boolean = true): FloatModel = {
+    val model = if (blas) {
+      ModelLoader.loadFloatModelForCaffe(modelPath, weightPath)
+    } else {
+      ModelLoader.loadFloatModelForCaffe(modelPath, weightPath).quantize()
+    }
     model.evaluate()
-    new FloatInferenceModel(model)
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  def loadFloatInferenceModelForTF(modelPath: String,
-                                   intraOpParallelismThreads: Int = 1,
-                                   interOpParallelismThreads: Int = 1,
-                                   usePerSessionThreads: Boolean = true): FloatInferenceModel = {
+  def loadFloatModelForTF(modelPath: String,
+                          intraOpParallelismThreads: Int = 1,
+                          interOpParallelismThreads: Int = 1,
+                          usePerSessionThreads: Boolean = true): FloatModel = {
     val sessionConfig = TFNet.SessionConfig(intraOpParallelismThreads,
       interOpParallelismThreads, usePerSessionThreads)
     val model = ModelLoader.loadFloatModelForTF(modelPath, sessionConfig)
     model.evaluate()
-    new FloatInferenceModel(model)
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  def cloneSharedWeightsModelsIntoArray(originalModel: FloatInferenceModel,
-                                                num: Int): Array[FloatInferenceModel] = {
-    var modelList = ArrayBuffer[FloatInferenceModel]()
-    val emptyModel = originalModel.model.cloneModule()
-    clearWeightsBias(emptyModel)
-    var i = 0
-    while (i < num) {
-      val clonedModel = emptyModel.cloneModule
-      val newModel = makeUpModel(clonedModel, originalModel.model.getWeightsBias)
-      modelList.append(newModel)
-      i += 1
-    }
-    modelList.toArray
+  def loadFloatModelForTFFrozenModel(modelPath: String,
+                                     inputs: Array[String],
+                                     outputs: Array[String],
+                                     intraOpParallelismThreads: Int = 1,
+                                     interOpParallelismThreads: Int = 1,
+                                     usePerSessionThreads: Boolean = true): FloatModel = {
+    val sessionConfig = TFNet.SessionConfig(intraOpParallelismThreads,
+      interOpParallelismThreads, usePerSessionThreads)
+    val model = ModelLoader.
+      loadFloatModelForTFFrozenModel(modelPath, inputs, outputs, sessionConfig)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  private def clearTensor[T: ClassTag](tensors: Array[Tensor[T]])
-                                      (implicit ev: TensorNumeric[T]): Unit = {
-    var i = 0
-    while (i < tensors.length) {
-      if (tensors(i) != null) {
-        tensors(i).set()
-      }
-      i += 1
-    }
+  def loadFloatModelForTFFrozenModelBytes(frozenModelBytes: Array[Byte],
+                                          inputs: Array[String],
+                                          outputs: Array[String],
+                                          intraOpParallelismThreads: Int = 1,
+                                          interOpParallelismThreads: Int = 1,
+                                          usePerSessionThreads: Boolean = true): FloatModel = {
+    val sessionConfig = TFNet.SessionConfig(intraOpParallelismThreads,
+      interOpParallelismThreads, usePerSessionThreads)
+    val model = ModelLoader.loadFloatModelForTFFrozenModelBytes(frozenModelBytes,
+      inputs, outputs, sessionConfig)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  private def clearWeightsBias(model: Module[Float]): Unit = {
-    clearTensor(model.parameters()._1)
-    clearTensor(model.parameters()._2)
+  def loadFloatModelForTFSavedModel(modelPath: String,
+                                    inputs: Array[String],
+                                    outputs: Array[String],
+                                    intraOpParallelismThreads: Int = 1,
+                                    interOpParallelismThreads: Int = 1,
+                                    usePerSessionThreads: Boolean = true): FloatModel = {
+    val sessionConfig = TFNet.SessionConfig(intraOpParallelismThreads,
+      interOpParallelismThreads, usePerSessionThreads)
+    val model = ModelLoader.loadFloatModelForTFSavedModel(modelPath, inputs, outputs, sessionConfig)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  private def putWeightsBias(weightBias: Array[Tensor[Float]],
-                             localModel: Module[Float]): Module[Float] = {
-    val localWeightBias = localModel.parameters()._1
-    var i = 0
-    while (i < localWeightBias.length) {
-      if (localWeightBias(i) != null) {
-        localWeightBias(i).set(weightBias(i))
-      }
-      i += 1
-    }
-    localModel
+  def loadFloatModelForTFSavedModelBytes(savedModelBytes: Array[Byte],
+                                         inputs: Array[String],
+                                         outputs: Array[String],
+                                         intraOpParallelismThreads: Int = 1,
+                                         interOpParallelismThreads: Int = 1,
+                                         usePerSessionThreads: Boolean = true): FloatModel = {
+    val sessionConfig = TFNet.SessionConfig(intraOpParallelismThreads,
+      interOpParallelismThreads, usePerSessionThreads)
+    val model = ModelLoader.
+      loadFloatModelForTFSavedModelBytes(savedModelBytes, inputs, outputs, sessionConfig)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
   }
 
-  private def makeUpModel(model: Module[Float], weightBias: Array[Tensor[Float]]):
-  FloatInferenceModel = {
-    val newModel = model.cloneModule()
-    putWeightsBias(weightBias, newModel)
-    newModel.evaluate()
-    new FloatInferenceModel(newModel)
+  def loadFloatModelForPyTorch(modelPath: String): FloatModel = {
+    val model = ModelLoader.loadFloatModelForPyTorch(modelPath)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
+  }
+
+  def loadFloatModelForPyTorch(modelBytes: Array[Byte]): FloatModel = {
+    val model = ModelLoader.loadFloatModelForPyTorch(modelBytes)
+    model.evaluate()
+    val metaModel = makeMetaModel(model)
+    new FloatModel(model, metaModel, true)
+  }
+
+  def loadOpenVINOModelForIR(modelFilePath: String,
+                             weightFilePath: String,
+                             deviceType: DeviceTypeEnumVal,
+                             batchSize: Int = 0): OpenVINOModel = {
+    OpenVinoInferenceSupportive.loadOpenVinoIR(modelFilePath, weightFilePath,
+      deviceType, batchSize)
+  }
+
+  def loadOpenVINOModelForIR(modelBytes: Array[Byte],
+                             weightBytes: Array[Byte],
+                             deviceType: DeviceTypeEnumVal,
+                             batchSize: Int): OpenVINOModel = {
+    OpenVinoInferenceSupportive.loadOpenVinoIR(modelBytes, weightBytes,
+      deviceType, batchSize)
   }
 }

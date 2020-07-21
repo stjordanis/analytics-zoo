@@ -121,8 +121,8 @@ class PythonAutoGrad[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZ
     autograd.AutoGrad.abs(a)
   }
 
-  def sum(a: Variable[T], axis: Int = 0, keepdims: Boolean = false): Variable[T] = {
-    autograd.AutoGrad.sum(a, axis, keepdims)
+  def sum(a: Variable[T], axis: Int = 0, keepDims: Boolean = false): Variable[T] = {
+    autograd.AutoGrad.sum(a, axis, keepDims)
   }
 
   def clip(a: Variable[T], min: Double, max: Double): Variable[T] = {
@@ -165,6 +165,15 @@ class PythonAutoGrad[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZ
     a.squeeze(dim)
   }
 
+  def squeeze(a: Variable[T], dims: JList[Int]): Variable[T] = {
+    if (dims == null) {
+      a.squeeze(null)
+    }
+    else {
+      a.squeeze(dims.asScala.toArray)
+    }
+  }
+
   def slice(a: Variable[T], dim: Int, startIndex: Int, length: Int): Variable[T] = {
     a.slice(dim, startIndex, length)
   }
@@ -189,6 +198,10 @@ class PythonAutoGrad[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZ
     autograd.AutoGrad.softplus(a)
   }
 
+  def erf(a: Variable[T]): Variable[T] = {
+    autograd.AutoGrad.erf(a)
+  }
+
   def expandDims(a: Variable[T], axis: Int): Variable[T] = {
     autograd.AutoGrad.expandDims(a, axis)
   }
@@ -202,7 +215,7 @@ class PythonAutoGrad[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZ
   }
 
   def mm(x: Variable[T], y: Variable[T], axes: JList[Int]): Variable[T] = {
-    autograd.AutoGrad.mm(x, y, axes.asScala.toList)
+    autograd.AutoGrad.mm(x, y, if (axes != null) axes.asScala.toList else null)
   }
 
   def l2Normalize(x: Variable[T], axis: Int): Variable[T] = {

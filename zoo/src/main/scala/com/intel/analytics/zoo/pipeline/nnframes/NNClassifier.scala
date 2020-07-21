@@ -22,10 +22,15 @@ import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.{Criterion, Module}
 import com.intel.analytics.zoo.feature.common._
 import com.intel.analytics.zoo.pipeline.nnframes.NNModel.NNModelWriter
+import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassificationModel, XGBoostHelper,
+XGBoostRegressor, XGBoostRegressionModel}
 import org.apache.spark.ml.DefaultParamsWriterWrapper
 import org.apache.spark.ml.adapter.SchemaUtils
+import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.param.{DoubleParam, ParamMap}
 import org.apache.spark.ml.util.{Identifiable, MLReadable, MLReader}
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.types._
 import org.json4s.DefaultFormats
 
@@ -48,7 +53,8 @@ class NNClassifier[T: ClassTag] private[zoo]  (
 
   override protected def wrapBigDLModel(m: Module[T]): NNClassifierModel[T] = {
     val classifierModel = new NNClassifierModel[T](m)
-    copyValues(classifierModel.setParent(this))
+    val originBatchsize = classifierModel.getBatchSize
+    copyValues(classifierModel.setParent(this)).setBatchSize(originBatchsize)
     val clonedTransformer = ToTuple() -> $(samplePreprocessing)
       .asInstanceOf[Preprocessing[(Any, Option[Any]), Sample[T]]].clonePreprocessing()
     classifierModel.setSamplePreprocessing(clonedTransformer)
@@ -111,6 +117,32 @@ object NNClassifier {
     new NNClassifier(model, criterion)
         .setSamplePreprocessing(
           FeatureLabelPreprocessing(SeqToTensor(featureSize), ScalarToTensor()))
+  }
+
+
+  /**
+   * Construct a [[NNClassifier]] with multiple input sizes. The constructor is useful
+   * when the feature column and label column contains the following data types:
+   * Float, Double, Int, Array[Float], Array[Double], Array[Int] and MLlib Vector. The feature
+   * data are converted to Tensors with the specified sizes before sending to the model.
+   *
+   * This API is used for multi-input model, where user need to specify the tensor sizes for
+   * each of the model input.
+   *
+   * @param model module to be optimized
+   * @param criterion  criterion method
+   * @param featureSize The sizes (Tensor dimensions) of the feature data.
+   */
+  def apply[T: ClassTag](
+      model: Module[T],
+      criterion: Criterion[T],
+      featureSize : Array[Array[Int]]
+    )(implicit ev: TensorNumeric[T]): NNClassifier[T] = {
+    new NNClassifier(model, criterion)
+      .setSamplePreprocessing(FeatureLabelPreprocessing(
+        SeqToMultipleTensors(featureSize), ScalarToTensor()
+      )
+    )
   }
 
   /**
@@ -216,6 +248,26 @@ object NNClassifierModel extends MLReadable[NNClassifierModel[_]] {
   }
 
   /**
+   * Construct a [[NNClassifierModel]] with sizes of multiple model inputs. The constructor is
+   * useful when the feature column contains the following data types:
+   * Float, Double, Int, Array[Float], Array[Double], Array[Int] and MLlib Vector. The feature
+   * data are converted to Tensors with the specified sizes before sending to the model.
+   *
+   * This API is used for multi-input model, where user need to specify the tensor sizes for
+   * each of the model input.
+   *
+   * @param model model to be used, which should be a multi-input model.
+   * @param featureSize The sizes (Tensor dimensions) of the feature data.
+   */
+  def apply[T: ClassTag](
+      model: Module[T],
+      featureSize : Array[Array[Int]]
+    )(implicit ev: TensorNumeric[T]): NNClassifierModel[T] = {
+    new NNClassifierModel(model)
+      .setSamplePreprocessing(SeqToMultipleTensors(featureSize) -> MultiTensorsToSample())
+  }
+
+  /**
    * Construct a [[NNClassifierModel]] with a feature Preprocessing.
    *
    * @param model BigDL module to be optimized
@@ -255,5 +307,305 @@ object NNClassifierModel extends MLReadable[NNClassifierModel[_]] {
 
   override def read: MLReader[NNClassifierModel[_]] = {
     new NNClassifierModel.NNClassifierModelReader
+  }
+}
+
+/**
+ * [[XGBClassifierModel]] is a trained XGBoost classification model.
+ * The prediction column will have the prediction results.
+ *
+ * @param model trained XGBoostClassificationModel to use in prediction.
+ */
+class XGBClassifierModel private[zoo](
+   val model: XGBoostClassificationModel) {
+  private var featuresCols: Array[String] = null
+  private var predictionCol: String = null
+
+  def setFeaturesCol(featuresColName: Array[String]): this.type = {
+    require(featuresColName.length > 1, "Please set a valid feature columns")
+    featuresCols = featuresColName
+    this
+  }
+
+  def setPredictionCol(value: String): this.type = {
+    predictionCol = value
+    this
+  }
+
+  def setInferBatchSize(value: Int): this.type = {
+    model.setInferBatchSize(value)
+    this
+  }
+
+  def transform(dataset: DataFrame): DataFrame = {
+    require(featuresCols!=None, "Please set feature columns before transform")
+    val featureVectorAssembler = new VectorAssembler()
+      .setInputCols(featuresCols)
+      .setOutputCol("featureAssembledVector")
+    val assembledDF = featureVectorAssembler.transform(dataset)
+
+    import org.apache.spark.sql.functions.{col, udf}
+    import org.apache.spark.ml.linalg.Vector
+    val asDense = udf((v: Vector) => v.toDense)
+    val xgbInput = assembledDF.withColumn("DenseFeatures", asDense(col("featureAssembledVector")))
+    model.setFeaturesCol("DenseFeatures")
+    var output = model.transform(xgbInput).drop("DenseFeatures", "featureAssembledVector")
+    if(predictionCol != null) {
+      output = output.withColumnRenamed("prediction", predictionCol)
+    }
+    output
+  }
+}
+
+object XGBClassifierModel {
+  def load(path: String, numClass: Int): XGBClassifierModel = {
+    new XGBClassifierModel(XGBoostHelper.load(path, numClass))
+  }
+}
+
+/**
+ * [[XGBRegressor]] xgboost wrapper of XGBRegressor.
+ */
+class XGBRegressor () {
+
+  private val model = new XGBoostRegressor()
+
+  def setLabelCol(labelColName : String) : this.type = {
+    model.setLabelCol(labelColName)
+    this
+  }
+
+  def setFeaturesCol(featuresColName: String): this.type = {
+    model.setFeaturesCol(featuresColName)
+    this
+  }
+
+  def fit(df: DataFrame): XGBRegressorModel = {
+    val xgbModel = model.fit(df)
+    new XGBRegressorModel(xgbModel)
+  }
+
+  def setNumRound(value: Int): this.type = {
+    model.setNumRound(value)
+    this
+  }
+
+  def setNumWorkers(value: Int): this.type = {
+    model.setNumWorkers(value)
+    this
+  }
+
+  def setNthread(value: Int): this.type = {
+    model.setNthread(value)
+    this
+  }
+
+  def setSilent(value: Int): this.type = {
+    model.setSilent(value)
+    this
+  }
+
+  def setMissing(value: Float): this.type = {
+    model.setMissing(value)
+    this
+  }
+
+  def setCheckpointPath(value: String): this.type = {
+    model.setCheckpointPath(value)
+    this
+  }
+
+  def setCheckpointInterval(value: Int): this.type = {
+    model.setCheckpointInterval(value)
+    this
+  }
+
+  def setSeed(value: Long): this.type = {
+    model.setSeed(value)
+    this
+  }
+
+  def setEta(value: Double): this.type = {
+    model.setEta(value)
+    this
+  }
+
+  def setGamma(value: Double): this.type = {
+    model.setGamma(value)
+    this
+  }
+
+  def setMaxDepth(value: Int): this.type = {
+    model.setMaxDepth(value)
+    this
+  }
+
+  def setMinChildWeight(value: Double): this.type = {
+    model.setMinChildWeight(value)
+    this
+  }
+
+  def setMaxDeltaStep(value: Double): this.type = {
+    model.setMaxDeltaStep(value)
+    this
+  }
+
+  def setColsampleBytree(value: Double): this.type = {
+    model.setColsampleBytree(value)
+    this
+  }
+
+  def setColsampleBylevel(value: Double): this.type = {
+    model.setColsampleBylevel(value)
+    this
+  }
+
+  def setLambda(value: Double): this.type = {
+    model.setLambda(value)
+    this
+  }
+
+  def setAlpha(value: Double): this.type = {
+    model.setAlpha(value)
+    this
+  }
+
+  def setTreeMethod(value: String): this.type = {
+    model.setTreeMethod(value)
+    this
+  }
+
+  def setGrowPolicy(value: String): this.type = {
+    model.setGrowPolicy(value)
+    this
+  }
+
+  def setMaxBins(value: Int): this.type = {
+    model.setMaxBins(value)
+    this
+  }
+
+  def setMaxLeaves(value: Int): this.type = {
+    model.setMaxLeaves(value)
+    this
+  }
+
+  def setSketchEps(value: Double): this.type = {
+    model.setSketchEps(value)
+    this
+  }
+
+  def setScalePosWeight(value: Double): this.type = {
+    model.setScalePosWeight(value)
+    this
+  }
+
+  def setSampleType(value: String): this.type = {
+    model.setSampleType(value)
+    this
+  }
+
+  def setNormalizeType(value: String): this.type = {
+    model.setNormalizeType(value)
+    this
+  }
+
+  def setRateDrop(value: Double): this.type = {
+    model.setRateDrop(value)
+    this
+  }
+
+  def setSkipDrop(value: Double): this.type = {
+    model.setSkipDrop(value)
+    this
+  }
+
+  def setLambdaBias(value: Double): this.type = {
+    model.setLambdaBias(value)
+    this
+  }
+
+  def setObjective(value: String): this.type = {
+    model.setObjective(value)
+    this
+  }
+
+  def setObjectiveType(value: String): this.type = {
+    model.setObjectiveType(value)
+    this
+  }
+
+  def setSubsample(value: Double): this.type = {
+    model.setSubsample(value)
+    this
+  }
+
+  def setBaseScore(value: Double): this.type = {
+    model.setBaseScore(value)
+    this
+  }
+
+  def setEvalMetric(value: String): this.type = {
+    model.setEvalMetric(value)
+    this
+  }
+
+  def setNumEarlyStoppingRounds(value: Int): this.type = {
+    model.setNumEarlyStoppingRounds(value)
+    this
+  }
+
+  def setMaximizeEvaluationMetrics(value: Boolean): this.type = {
+    model.setMaximizeEvaluationMetrics(value)
+    this
+  }
+}
+
+/**
+ * [[XGBRegressorModel]] xgboost wrapper of XGBRegressorModel.
+ */
+class XGBRegressorModel private[zoo](val model: XGBoostRegressionModel) {
+  var predictionCol: String = null
+  def setPredictionCol(value: String): this.type = {
+    predictionCol = value
+    this
+  }
+
+  def setInferBatchSize(value: Int): this.type = {
+    model.setInferBatchSize(value)
+    this
+  }
+
+  def setFeaturesCol(value: String): this.type = {
+    model.setFeaturesCol(value)
+    this
+  }
+
+  def transform(dataset: DataFrame): DataFrame = {
+    var output = model.transform(dataset)
+    if(predictionCol != null) {
+      output = output.withColumnRenamed("prediction", predictionCol)
+    }
+    output
+  }
+
+  def save(path: String): Unit = {
+    model.write.overwrite().save(path)
+  }
+}
+
+object XGBRegressorModel {
+  /**
+   * Load pretrained Zoo XGBRegressorModel.
+   */
+  def load(path: String): XGBRegressorModel = {
+    new XGBRegressorModel(XGBoostRegressionModel.load(path))
+  }
+
+  /**
+   * Load pretrained xgboost XGBoostRegressionModel.
+   */
+  def loadFromXGB(path: String): XGBRegressorModel = {
+    new XGBRegressorModel(XGBoostHelper.load(path))
   }
 }

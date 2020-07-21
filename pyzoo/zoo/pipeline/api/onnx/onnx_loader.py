@@ -30,6 +30,9 @@ class OnnxInput(object):
 
 
 class OnnxLoader(object):
+
+    training = False
+
     def __init__(self, onnx_graph):
         self.graph = onnx_graph
         self._all_tensors = {}  # including the original input tensor or the immediate tensor.
@@ -37,13 +40,19 @@ class OnnxLoader(object):
         self._inputs = OrderedDict()  # the original input tensor only.
 
     @classmethod
-    def from_path(cls, onnx_path):
+    def from_path(cls, onnx_path, is_training=False):
         onnx_model = onnx.load(onnx_path)
-        return cls(onnx_model.graph)
+        try:
+            zmodel = OnnxLoader(onnx_model.graph).to_keras()
+        except Exception as e:
+            print(onnx_model)
+            raise e
+        zmodel.training(is_training=is_training)
+        return zmodel
 
     @staticmethod
     # inputs_dict is a list of batch data
-    def run_node(node, inputs):
+    def run_node(node, inputs, is_training=False):
         inputs_list = []
         assert len(inputs) == len(list(node.input))
         for node_input, input_data in zip(node.input, inputs):
@@ -53,6 +62,7 @@ class OnnxLoader(object):
 
         model = zmodels.Model(input=[i.zvalue for i in mapper.model_inputs], output=out_tensor)
         data = [i.data for i in mapper.model_inputs]
+        model.training(is_training)
         output = model.forward(data if len(data) > 1 else data[0])
         result = {}
         if isinstance(output, list):
@@ -89,6 +99,8 @@ class OnnxLoader(object):
         for node in self.graph.node:
             inputs = []
             for i in node.input:
+                if i == "":
+                    continue
                 if i not in self._all_tensors:
                     raise Exception("Cannot find {}".format(i))
                 inputs.append(self._all_tensors[i])
@@ -103,7 +115,8 @@ class OnnxLoader(object):
                 self._all_tensors[input.name] = input.zvalue
             tensor = mapper.to_tensor()
             output_ids = list(node.output)
-            assert len(output_ids) == 1, "Only support single output for now"
+            assert len(output_ids) == 1 or node.op_type == "Dropout",\
+                "Only support single output for now"
             self._all_tensors[output_ids[0]] = OnnxInput(name=tensor.name, zvalue=tensor)
 
         output_tensors = []

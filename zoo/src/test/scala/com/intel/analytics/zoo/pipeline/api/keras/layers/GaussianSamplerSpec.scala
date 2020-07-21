@@ -24,7 +24,6 @@ import com.intel.analytics.bigdl.utils.{RandomGenerator, Shape, T, Table}
 import com.intel.analytics.zoo.pipeline.api.keras.ZooSpecHelper
 import com.intel.analytics.zoo.pipeline.api.keras.serializer.ModuleSerializationTest
 
-import scala.util.Random
 
 class GaussianSamplerSpec extends ZooSpecHelper {
 
@@ -45,16 +44,17 @@ class GaussianSamplerSerialTest extends ModuleSerializationTest {
   override def test(): Unit = {
     val layer = ZGaussianSampler[Float](inputShape = Shape(List(Shape(3), Shape(3))))
     layer.build(Shape(List(Shape(-1, 3), Shape(-1, 3))))
-    val input = T(Tensor[Float](Array(2, 3)).apply1(_ => Random.nextFloat()),
-      Tensor[Float](Array(2, 3)).apply1(_ => Random.nextFloat()))
+    val input = T(Tensor[Float](Array(2, 3)).rand(),
+      Tensor[Float](Array(2, 3)).rand())
 
-    RandomGenerator.RNG.setSeed(1234)
+    val seed = System.currentTimeMillis()
+    RandomGenerator.RNG.setSeed(seed)
     val originalOutput = layer.forward(input).asInstanceOf[Tensor[Float]].clone()
     val tmpFile = ZooSpecHelper.createTmpFile()
     val absPath = tmpFile.getAbsolutePath
     layer.saveModule(absPath, overWrite = true)
     val loadedLayer = Module.loadModule[Float](absPath)
-    RandomGenerator.RNG.setSeed(1234)
+    RandomGenerator.RNG.setSeed(seed)
     val loadedOutput = loadedLayer.forward(input).asInstanceOf[Tensor[Float]].clone()
     originalOutput.asInstanceOf[Tensor[Float]].size.sameElements(
       loadedOutput.asInstanceOf[Tensor[Float]].size) should be (true)

@@ -16,13 +16,16 @@
 
 package com.intel.analytics.zoo.pipeline.api.keras.layers.utils
 
-import com.intel.analytics.bigdl.nn.Graph
+import com.intel.analytics.bigdl.nn.{Graph, MklInt8Convertible}
 import com.intel.analytics.bigdl.nn.Graph.ModuleNode
 import com.intel.analytics.bigdl.nn.abstractnn.{AbstractModule, Activity}
 import com.intel.analytics.bigdl.nn.keras.KerasLayer
-import com.intel.analytics.bigdl.utils.{Engine, Shape}
+import com.intel.analytics.bigdl.optim.SGD
+import com.intel.analytics.bigdl.utils._
+import com.intel.analytics.zoo.pipeline.api.keras.optimizers.{Adam, AdamWeightDecay}
 
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 object KerasLayerRef {
@@ -82,5 +85,38 @@ object EngineRef {
   def getNodeNumber(): Int = {
     KerasUtils.invokeMethod(Engine, "nodeNumber").asInstanceOf[Int]
   }
+
+  def getDefaultThreadPool(): ThreadPool = {
+    KerasUtils.invokeMethod(Engine, "default").asInstanceOf[ThreadPool]
+  }
+
+  def getEngineType(): EngineType = {
+    KerasUtils.invokeMethod(Engine, "getEngineType").asInstanceOf[EngineType]
+  }
+
+  def setCoreNumber(num: Int): Unit = {
+    val field = Engine.getClass.getDeclaredField("physicalCoreNumber")
+    field.setAccessible(true)
+    field.setInt(Engine, num)
+  }
 }
 
+object SGDRef {
+  def getstate[T: ClassTag](instance: Adam[T]): Table = {
+    KerasUtils.invokeMethod(instance, "state").asInstanceOf[Table]
+  }
+
+  def getstate[T: ClassTag](instance: AdamWeightDecay[T]): Table = {
+    KerasUtils.invokeMethod(instance, "state").asInstanceOf[Table]
+  }
+
+  def getstate[T](instance: SGD[T]): Table = {
+    KerasUtils.invokeMethod(instance, "state").asInstanceOf[Table]
+  }
+}
+
+object MklInt8ConvertibleRef {
+  def getWeightScalesBuffer(instance: MklInt8Convertible): ArrayBuffer[Array[Float]] = {
+    KerasUtils.invokeMethod(instance, "weightScalesBuffer").asInstanceOf[ArrayBuffer[Array[Float]]]
+  }
+}

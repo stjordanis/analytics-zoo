@@ -26,7 +26,6 @@ import com.intel.analytics.zoo.pipeline.api.keras.layers._
 import com.intel.analytics.zoo.pipeline.api.keras.serializer.ModuleSerializationTest
 import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
 
-import scala.util.Random
 
 class ModelSerialTest extends ModuleSerializationTest {
   private def testParameterSerialWithModel(): Unit = {
@@ -36,7 +35,7 @@ class ModelSerialTest extends ModuleSerializationTest {
     val cDense = AutoGrad.mm(input, w, axes = List(1, 1)) + bias
     val model = Model[Float](input = input, output = cDense)
 
-    val inputData = Tensor[Float](8, 3).apply1(_ => Random.nextFloat())
+    val inputData = Tensor[Float](8, 3).rand()
     runSerializationTest(model, inputData)
   }
 
@@ -46,7 +45,7 @@ class ModelSerialTest extends ModuleSerializationTest {
     val tmpFile = ZooSpecHelper.createTmpFile()
     model.saveModule(tmpFile.getAbsolutePath, overWrite = true)
     val reloadModel = Net.load[Float](tmpFile.getAbsolutePath)
-    val inputData = Tensor[Float](2, 10).apply1(_ => Random.nextFloat())
+    val inputData = Tensor[Float](2, 10).rand()
     ZooSpecHelper.compareOutputAndGradInput(
       model.asInstanceOf[AbstractModule[Tensor[Float], Tensor[Float], Float]],
       reloadModel.asInstanceOf[AbstractModule[Tensor[Float], Tensor[Float], Float]],
@@ -63,7 +62,7 @@ class SequentialSerialTest extends ModuleSerializationTest {
     val tmpFile = ZooSpecHelper.createTmpFile()
     model.saveModule(tmpFile.getAbsolutePath, overWrite = true)
     val reloadModel = Net.load[Float](tmpFile.getAbsolutePath)
-    val inputData = Tensor[Float](2, 10).apply1(_ => Random.nextFloat())
+    val inputData = Tensor[Float](2, 10).rand()
     ZooSpecHelper.compareOutputAndGradInput(
       model.asInstanceOf[AbstractModule[Tensor[Float], Tensor[Float], Float]],
       reloadModel.asInstanceOf[AbstractModule[Tensor[Float], Tensor[Float], Float]],
@@ -92,7 +91,7 @@ class TopologySpec extends FlatSpec with Matchers with BeforeAndAfter {
 
   "model.summary() for Sequential" should "work properly" in {
     val model = Sequential[Float]()
-    model.add(Embedding[Float](20000, 128, inputShape = Shape(100)).setName("embedding1"))
+    model.add(Embedding[Float](20000, 128, inputLength = 100).setName("embedding1"))
     model.add(Dropout[Float](0.25))
     model.add(Convolution1D[Float](nbFilter = 64, filterLength = 5, borderMode = "valid",
       activation = "relu", subsampleLength = 1).setName("conv1"))
@@ -102,6 +101,22 @@ class TopologySpec extends FlatSpec with Matchers with BeforeAndAfter {
     model.add(Activation[Float]("sigmoid"))
     model.freeze("dense1")
     model.summary()
+  }
+
+  "model.summary() for non-trainable Embedding" should "work properly" in {
+    val model = Sequential[Float]()
+    val embedding = Embedding[Float](20000, 128, inputLength = 100, trainable = false)
+    model.add(embedding)
+    model.add(Dropout[Float](0.25))
+    val conv = Convolution1D[Float](nbFilter = 64, filterLength = 5, borderMode = "valid",
+      activation = "relu", subsampleLength = 1).setName("conv1")
+    model.add(conv)
+    model.summary()
+    embedding.asInstanceOf[Net].isFrozen() should be (true)
+    conv.asInstanceOf[Net].isFrozen() should be (false)
+    model.freeze("conv1")
+    model.summary()
+    conv.asInstanceOf[Net].isFrozen() should be (true)
   }
 
   "model.summary() for nested Sequential" should "work properly" in {

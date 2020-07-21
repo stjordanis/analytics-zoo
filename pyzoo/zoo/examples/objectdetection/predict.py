@@ -20,6 +20,7 @@ import cv2
 from zoo.common.nncontext import init_nncontext
 from zoo.models.image.objectdetection import *
 
+
 sc = init_nncontext("Object Detection Example")
 
 parser = argparse.ArgumentParser()
@@ -44,3 +45,6 @@ def predict(model_path, img_path, output_path, partition_num):
 if __name__ == "__main__":
     args = parser.parse_args()
     predict(args.model_path, args.img_path, args.output_path, args.partition_num)
+
+print("finished...")
+sc.stop()

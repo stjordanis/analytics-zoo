@@ -352,6 +352,25 @@ class Exp(ZooKerasLayer):
                                   **kwargs)
 
 
+class Identity(ZooKerasLayer):
+    """
+    Identity just return the input to output.
+    It's useful in same parallel container to get an origin input.
+
+    # Arguments
+    input_shape: A shape tuple, not including batch.
+    name: String to set the name of the layer.
+          If not specified, its name will by default to be a generated string.
+
+    >>> identity = Identity(input_shape=(3, ))
+    creating: createZooKerasIdentity
+    """
+    def __init__(self, input_shape=None, **kwargs):
+        super(Identity, self).__init__(None,
+                                       list(input_shape) if input_shape else None,
+                                       **kwargs)
+
+
 class Log(ZooKerasLayer):
     """
     Applies a log transformation to the input.
@@ -732,7 +751,7 @@ class GaussianSampler(ZooKerasLayer):
     # Arguments
     input_shape: A shape tuple, not including batch.
 
-    >>> gaussianSampler = GaussianSampler(input_shape=(2, 3, 5, 7))
+    >>> gaussianSampler = GaussianSampler(input_shape=[(3,),(3,)])
     creating: createZooKerasGaussianSampler
     """
     def __init__(self, input_shape=None, **kwargs):
@@ -761,7 +780,7 @@ class ResizeBilinear(ZooKerasLayer):
     creating: createZooKerasResizeBilinear
     """
     def __init__(self, output_height, output_width, align_corner=False,
-                 dim_ordering="th", input_shape=(2, 3, 5, 7), **kwargs):
+                 dim_ordering="th", input_shape=None, **kwargs):
         super(ResizeBilinear, self).__init__(None,
                                              output_height,
                                              output_width,
@@ -769,3 +788,21 @@ class ResizeBilinear(ZooKerasLayer):
                                              dim_ordering,
                                              list(input_shape) if input_shape else None,
                                              **kwargs)
+
+
+class SelectTable(ZooKerasLayer):
+    """
+    Creates a module that takes a list of JTensors as input and outputs the element at index `index`
+
+    # Arguments
+    index: the index to be selected. 0-based index
+    input_shape: a list of shape tuples, not including batch.
+
+    >>> selectTable = SelectTable(0, input_shape=[[2, 3], [5, 7]])
+    creating: createZooKerasSelectTable
+    """
+    def __init__(self, index, input_shape=None, **kwargs):
+        super(SelectTable, self).__init__(None,
+                                          index,
+                                          list(input_shape) if input_shape else None,
+                                          **kwargs)

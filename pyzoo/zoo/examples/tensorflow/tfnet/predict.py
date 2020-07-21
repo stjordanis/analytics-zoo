@@ -16,16 +16,14 @@
 
 from optparse import OptionParser
 
-from bigdl.nn.layer import Sequential, Transpose, Contiguous, SelectTable
-from zoo.pipeline.api.net import TFNet
+from zoo.tfpark import TFNet
 from zoo.common.nncontext import init_nncontext
 from zoo.feature.common import *
-from zoo.feature.image.imagePreprocessing import *
 from zoo.models.image.objectdetection import *
 
 
 def predict(model_path, img_path, partition_num=4):
-    inputs = "ToFloat:0"
+    inputs = "image_tensor:0"
     outputs = ["num_detections:0", "detection_boxes:0",
                "detection_scores:0", "detection_classes:0"]
 
@@ -54,3 +52,5 @@ if __name__ == "__main__":
     sc = init_nncontext("TFNet Object Detection Example")
 
     predict(options.model_path, options.img_path, options.partition_num)
+    print("finished...")
+    sc.stop()

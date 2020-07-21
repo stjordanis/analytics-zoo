@@ -2,9 +2,16 @@
 *.pyc
 *.class
 *.crc
+*.o
 target/
 /dist/
 pyzoo/.pytest_cache/
+pyzoo/ray_poc.zip
+
+# External Python packages
+python_packages/
+/zoo/src/main/resources/pytorch/lib
+/zoo/src/main/java/com/intel/analytics/zoo/pipeline/api/net/native/build
 
 # SBT, Maven specific
 .cache
@@ -26,13 +33,13 @@ dependency-reduced-pom.xml
 .DS_Store
 
 # data files
-*.csv
 model*.[0-9]*
 state*.[0-9]*
 
 # other
 nohup.out
 *.log
+*.lock
 *.un~
 .ipynb_checkpoints/
 pyspark/dist/

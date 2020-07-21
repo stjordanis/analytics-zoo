@@ -16,17 +16,15 @@
 package com.intel.analytics.zoo.pipeline.api.net
 
 
-import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.{LayerException, T}
-import com.intel.analytics.zoo.pipeline.api.Net
-import com.intel.analytics.zoo.pipeline.api.keras.ZooSpecHelper
-import com.intel.analytics.zoo.pipeline.api.keras.serializer.ModuleSerializationTest
+import com.intel.analytics.zoo.tfpark.TFUtils
+import org.apache.commons.lang.StringUtils
 import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.SparkConf
 import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
+import org.tensorflow.{Tensor => TFTensor}
 
-import scala.util.Random
 
 class TFNetSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
@@ -65,7 +63,6 @@ class TFNetSpec extends FlatSpec with Matchers with BeforeAndAfter {
 
     result.toTensor[Float].size() should be(Array(2, 2))
   }
-
 
   "TFNet" should "should be serializable by java" in {
 
@@ -138,4 +135,59 @@ class TFNetSpec extends FlatSpec with Matchers with BeforeAndAfter {
     gradInput.size() should be (input.size())
   }
 
+  "TFNet" should "work with saved_model with resource variable"  in {
+    val resource = getClass().getClassLoader().getResource("saved-model-resource")
+    val tfnet = TFNet.fromSavedModel(resource.getPath,
+      inputs = Array("flatten_input:0"), outputs = Array("dense_2/Softmax:0"))
+    val inputData = Tensor.ones[Float](4, 28, 28, 1)
+    tfnet.forward(inputData)
+  }
+
+  "TFNet" should "work with saved_model with non-resource variable"  in {
+    val resource = getClass().getClassLoader().getResource("saved-model-not-resource")
+    val tfnet = TFNet.fromSavedModel(resource.getPath,
+      inputs = Array("Placeholder:0"), outputs = Array("LeNet/fc4/BiasAdd:0"))
+
+    tfnet.forward(Tensor.ones[Float](4, 28, 28, 1))
+  }
+
+  "TFNet" should "work with saved_model with signature"  in {
+    val resource = getClass().getClassLoader().getResource("saved-model-signature")
+    val tfnet = TFNet.fromSavedModel(resource.getPath)
+    val output = tfnet.forward(Tensor.ones[Float](4, 4)).toTensor[Float].clone()
+    output.size() should be (Array(4, 10))
+  }
+
+  "TFNet" should "work with saved_model with signature and inputs"  in {
+    val resource = getClass().getClassLoader().getResource("saved-model-signature")
+    val tfnet = TFNet.fromSavedModel(resource.getPath,
+      inputs = Array("Placeholder:0"), outputs = null)
+    val output = tfnet.forward(Tensor.ones[Float](4, 4)).toTensor[Float].clone()
+    output.size() should be (Array(4, 10))
+  }
+
+  "TFNet" should "work with saved_model with signature and outputs"  in {
+    val resource = getClass().getClassLoader().getResource("saved-model-signature")
+    val tfnet = TFNet.fromSavedModel(resource.getPath,
+      inputs = null,
+      outputs = Array("dense/BiasAdd:0"))
+    val output = tfnet.forward(Tensor.ones[Float](4, 4)).toTensor[Float].clone()
+    output.size() should be (Array(4, 10))
+  }
+
+  "TFNet" should "output TFTensor of String" in {
+    TFNet
+
+    import com.intel.analytics.zoo.tfpark.TFTensorNumeric.NumericByteArray
+    val inputs = Array.tabulate(20) { i =>
+      val strLen = (1 << i) + 2
+      StringUtils.repeat("1", strLen)
+    }
+    val t = TFTensor.create(inputs.map(_.getBytes("utf-8")))
+    val tt = Tensor[Array[Byte]]()
+    TFUtils.tf2bigdl(t, tt)
+    val result = tt.storage().array().map(new String(_, "utf-8")).toSeq
+
+    result should be (inputs.toSeq)
+  }
 }

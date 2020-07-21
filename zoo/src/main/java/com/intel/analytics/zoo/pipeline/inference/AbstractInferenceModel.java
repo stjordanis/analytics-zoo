@@ -16,134 +16,130 @@
 
 package com.intel.analytics.zoo.pipeline.inference;
 
-import com.intel.analytics.bigdl.utils.Engine;
-import scala.actors.threadpool.Arrays;
-
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.LinkedBlockingQueue;
 
-public abstract class AbstractInferenceModel implements Serializable {
-
-  private int supportedConcurrentNum = 1;
-  private FloatInferenceModel originalModel;
-  protected LinkedBlockingQueue<FloatInferenceModel> modelQueue;
+public abstract class AbstractInferenceModel extends InferenceModel implements Serializable {
 
   public AbstractInferenceModel() {
-    modelQueue = new LinkedBlockingQueue<FloatInferenceModel>(supportedConcurrentNum);
+    super();
   }
 
-  public AbstractInferenceModel(int supportedConcurrentNum) {
-    this.supportedConcurrentNum = supportedConcurrentNum;
-    modelQueue = new LinkedBlockingQueue<FloatInferenceModel>(supportedConcurrentNum);
+  public AbstractInferenceModel(int concurrentNum) {
+    super(concurrentNum);
   }
 
+  public AbstractInferenceModel(boolean autoScalingEnabled, int concurrentNum) {
+    super(autoScalingEnabled, concurrentNum);
+  }
+
+  public void loadBigDL(String modelPath) {
+    doLoadBigDL(modelPath, null, true);
+  }
+
+  public void loadBigDL(String modelPath, String weightPath) {
+    doLoadBigDL(modelPath, weightPath, true);
+  }
+
+  @Deprecated
   public void load(String modelPath) {
-    load(modelPath, null);
+    doLoad(modelPath, null, true);
   }
 
+  @Deprecated
   public void load(String modelPath, String weightPath) {
-    originalModel = InferenceModelFactory.loadFloatInferenceModel(modelPath, weightPath);
-    FloatInferenceModel[] modelArray = InferenceModelFactory.cloneSharedWeightsModelsIntoArray(originalModel, supportedConcurrentNum);
-    for (int i = 0; i < supportedConcurrentNum; i++) {
-      modelQueue.offer(modelArray[i]);
-    }
+    doLoad(modelPath, weightPath, true);
   }
 
   public void loadCaffe(String modelPath) {
-    loadCaffe(modelPath, null);
+    doLoadCaffe(modelPath, null, true);
   }
 
   public void loadCaffe(String modelPath, String weightPath) {
-    originalModel = InferenceModelFactory.loadFloatInferenceModelForCaffe(modelPath, weightPath);
-    FloatInferenceModel[] modelArray = InferenceModelFactory.cloneSharedWeightsModelsIntoArray(originalModel, supportedConcurrentNum);
-    for (int i = 0; i < supportedConcurrentNum; i++) {
-      modelQueue.offer(modelArray[i]);
-    }
+    doLoadCaffe(modelPath, weightPath, true);
   }
 
-  public void loadTF(String modelPath) {
-    loadTF(modelPath, 1, 1, true);
+  public void loadTensorflow(String modelPath, String modelType) {
+    doLoadTensorflow(modelPath, modelType);
   }
 
-  public void loadTF(String modelPath, int intraOpParallelismThreads, int interOpParallelismThreads, boolean usePerSessionThreads) {
-    originalModel = InferenceModelFactory.loadFloatInferenceModelForTF(modelPath, intraOpParallelismThreads, interOpParallelismThreads, usePerSessionThreads);
-    FloatInferenceModel[] modelArray = InferenceModelFactory.cloneSharedWeightsModelsIntoArray(originalModel, supportedConcurrentNum);
-    for (int i = 0; i < supportedConcurrentNum; i++) {
-      modelQueue.offer(modelArray[i]);
-    }
+  public void loadTensorflow(String modelPath, String modelType, int intraOpParallelismThreads, int interOpParallelismThreads, boolean usePerSessionThreads) {
+    doLoadTensorflow(modelPath, modelType, intraOpParallelismThreads, interOpParallelismThreads, usePerSessionThreads);
+  }
+
+  public void loadTensorflow(String modelPath, String modelType, String[] inputs, String[] outputs) {
+    doLoadTensorflow(modelPath, modelType, inputs, outputs);
+  }
+
+  public void loadTensorflow(String modelPath, String modelType, String[] inputs, String[] outputs, int intraOpParallelismThreads, int interOpParallelismThreads, boolean usePerSessionThreads) {
+    doLoadTensorflow(modelPath, modelType, inputs, outputs, intraOpParallelismThreads, interOpParallelismThreads, usePerSessionThreads);
+  }
+
+  public void loadTensorflow(byte[] savedModelBytes, String modelType, String[] inputs, String[] outputs) {
+    doLoadTensorflow(savedModelBytes, modelType, inputs, outputs);
+  }
+
+  public void loadTensorflow(byte[] savedModelBytes, String modelType, String[] inputs, String[] outputs, int intraOpParallelismThreads, int interOpParallelismThreads, boolean usePerSessionThreads) {
+    doLoadTensorflow(savedModelBytes, modelType, inputs, outputs, intraOpParallelismThreads, interOpParallelismThreads, usePerSessionThreads);
+  }
+
+  public void loadPyTorch(String modelPath) {
+    doLoadPyTorch(modelPath);
+  }
+
+  public void loadPyTorch(byte[] modelBytes) {
+    doLoadPyTorch(modelBytes);
+  }
+
+  public void loadOpenVINO(String modelFilePath, String weightFilePath, int batchSize) {
+    doLoadOpenVINO(modelFilePath, weightFilePath, batchSize);
+  }
+
+  public void loadOpenVINO(String modelFilePath, String weightFilePath) {
+    doLoadOpenVINO(modelFilePath, weightFilePath, 0);
+  }
+
+  public void loadOpenVINO(byte[] modelBytes, byte[] weightBytes, int batchSize) {
+    doLoadOpenVINO(modelBytes, weightBytes, batchSize);
+  }
+
+  public void loadOpenVINO(byte[] modelBytes, byte[] weightBytes) {
+    doLoadOpenVINO(modelBytes, weightBytes, 0);
   }
 
   public void reload(String modelPath) {
-    load(modelPath, null);
+    doReload(modelPath, null);
   }
 
   public void reload(String modelPath, String weightPath) {
-    originalModel = null;
-    modelQueue.clear();
-    load(modelPath, weightPath);
+    doReload(modelPath, weightPath);
+  }
+
+  public void release() {
+    doRelease();
   }
 
   @Deprecated
   public List<Float> predict(List<Float> input, int... shape) {
-    FloatInferenceModel model = null;
-    List<Float> result;
     List<Integer> inputShape = new ArrayList<Integer>();
     for (int s : shape) {
       inputShape.add(s);
     }
-    try {
-      model = modelQueue.take();
-    } catch (InterruptedException e) {
-      throw new InferenceRuntimeException("no model available", e);
-    }
-    try {
-      result = model.predict(input, inputShape);
-    } finally {
-      modelQueue.offer(model);
-    }
-    return result;
+    return doPredict(input, inputShape);
   }
 
   public List<List<JTensor>> predict(List<List<JTensor>> inputs) {
-    FloatInferenceModel model = null;
-    List<List<JTensor>> result;
-    try {
-      model = modelQueue.take();
-    } catch (InterruptedException e) {
-      throw new InferenceRuntimeException("no model available", e);
-    }
-    try {
-      result = model.predict(inputs);
-    } finally {
-      modelQueue.offer(model);
-    }
-    return result;
+    return doPredict(inputs);
   }
 
   public List<List<JTensor>> predict(List<JTensor>[] inputs) {
     return predict(Arrays.asList(inputs));
   }
 
-  private void writeObject(ObjectOutputStream out) throws IOException {
-    out.writeInt(supportedConcurrentNum);
-    out.writeObject(originalModel);
-  }
-
-  private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-    System.setProperty("bigdl.localMode", System.getProperty("bigdl.localMode", "true"));
-    System.setProperty("bigdl.coreNumber", System.getProperty("bigdl.coreNumber", "1"));
-    Engine.init();
-    supportedConcurrentNum = in.readInt();
-    originalModel = ((FloatInferenceModel) in.readObject());
-    modelQueue = new LinkedBlockingQueue<FloatInferenceModel>(supportedConcurrentNum);
-    FloatInferenceModel[] modelArray = InferenceModelFactory.cloneSharedWeightsModelsIntoArray(originalModel, supportedConcurrentNum);
-    for (int i = 0; i < supportedConcurrentNum; i++) {
-      modelQueue.offer(modelArray[i]);
-    }
+  @Override
+  public String toString() {
+    return super.toString();
   }
 }

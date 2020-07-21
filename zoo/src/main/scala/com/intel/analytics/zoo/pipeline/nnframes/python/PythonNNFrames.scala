@@ -20,13 +20,14 @@ import java.util.{ArrayList => JArrayList, List => JList}
 
 import com.intel.analytics.bigdl.dataset.{Sample, Transformer}
 import com.intel.analytics.bigdl.optim.{OptimMethod, Trigger, ValidationMethod}
-import com.intel.analytics.bigdl.python.api.PythonBigDL
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
 import com.intel.analytics.bigdl.{Criterion, Module}
+import com.intel.analytics.zoo.common.PythonZoo
 import com.intel.analytics.zoo.feature.common._
-import com.intel.analytics.zoo.feature.image.{ImageFeatureToTensor, RowToImageFeature}
+import com.intel.analytics.zoo.feature.image.RowToImageFeature
+import com.intel.analytics.zoo.feature.pmem._
 import com.intel.analytics.zoo.pipeline.nnframes._
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.sql.DataFrame
@@ -41,7 +42,7 @@ object PythonNNFrames {
   def ofDouble(): PythonNNFrames[Double] = new PythonNNFrames[Double]()
 }
 
-class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonBigDL[T] {
+class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonZoo[T] {
 
   def nnReadImage(path: String, sc: JavaSparkContext, minParitions: Int,
                   resizeH: Int, resizeW: Int, imageCodec: Int): DataFrame = {
@@ -106,16 +107,16 @@ class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonB
     SeqToTensor(size.asScala.toArray)
   }
 
+  def createSeqToMultipleTensors(size: JArrayList[JArrayList[Int]]): SeqToMultipleTensors[T] = {
+    SeqToMultipleTensors(size.asScala.map(x => x.asScala.toArray).toArray)
+  }
+
   def createArrayToTensor(size: JArrayList[Int]): ArrayToTensor[T] = {
     ArrayToTensor(size.asScala.toArray)
   }
 
   def createMLlibVectorToTensor(size: JArrayList[Int]): MLlibVectorToTensor[T] = {
     MLlibVectorToTensor(size.asScala.toArray)
-  }
-
-  def createImageFeatureToTensor(): ImageFeatureToTensor[T] = {
-    ImageFeatureToTensor()
   }
 
   def createRowToImageFeature(): RowToImageFeature[T] = {
@@ -125,9 +126,9 @@ class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonB
   def createFeatureLabelPreprocessing(
       featureTransfomer: Preprocessing[Any, Tensor[T]],
       labelTransformer: Preprocessing[Any, Tensor[T]]
-    ): FeatureLabelPreprocessing[Any, Any, Sample[T]] = {
+    ): FeatureLabelPreprocessing[Any, Any, Any, Sample[T]] = {
     FeatureLabelPreprocessing(featureTransfomer, labelTransformer)
-      .asInstanceOf[FeatureLabelPreprocessing[Any, Any, Sample[T]]]
+      .asInstanceOf[FeatureLabelPreprocessing[Any, Any, Any, Sample[T]]]
   }
 
   def createChainedPreprocessing(list: JList[Preprocessing[Any, Any]]): Preprocessing[Any, Any] = {
@@ -162,6 +163,24 @@ class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonB
       vMethods : JList[ValidationMethod[T]],
       batchSize: Int): NNEstimator[T] = {
     estimator.setValidation(trigger, validationDF, vMethods.asScala.toArray, batchSize)
+  }
+
+  def setEndWhen(estimator: NNEstimator[T], trigger: Trigger): NNEstimator[T] = {
+    estimator.setEndWhen(trigger)
+  }
+
+  def setDataCacheLevel(
+      estimator: NNEstimator[T],
+      level: String,
+      numSlice: Int = 4): NNEstimator[T] = {
+    val memType = level.trim.toUpperCase match {
+      case "DRAM" => DRAM
+      case "PMEM" => PMEM
+      case "DISK_AND_DRAM" => DISK_AND_DRAM(numSlice)
+      case "DIRECT" => DIRECT
+      case _ => throw new IllegalArgumentException(s"$level is not supported.")
+    }
+    estimator.setDataCacheLevel(memType)
   }
 
   def setCheckpoint(
@@ -207,11 +226,29 @@ class PythonNNFrames[T: ClassTag](implicit ev: TensorNumeric[T]) extends PythonB
 
   def loadNNModel(path: String): NNModel[_] = {
     val loaded = NNModel.load(path)
-    println(loaded)
     loaded
   }
 
   def loadNNClassifierModel(path: String): NNClassifierModel[_] = {
     NNClassifierModel.load(path)
+  }
+
+  def loadXGBClassifierModel(path: String, numClasses: Int): XGBClassifierModel = {
+    XGBClassifierModel.load(path, numClasses)
+  }
+
+  def setFeaturesXGBClassifierModel(model: XGBClassifierModel,
+                                          features: JList[String]): Unit = {
+    model.setFeaturesCol(features.asScala.toArray)
+  }
+
+  def setPredictionXGBClassifierModel(model: XGBClassifierModel,
+                                            prediction: String): Unit = {
+    model.setPredictionCol(prediction)
+  }
+
+  def transformXGBClassifierModel(model: XGBClassifierModel,
+                                        dataset: DataFrame): DataFrame = {
+    model.transform(dataset)
   }
 }

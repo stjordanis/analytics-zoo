@@ -53,6 +53,26 @@ class Merge[T: ClassTag](
   extends KerasLayer[Tensor[T], Tensor[T], T](Merge.calcBatchInputShape(inputShape, layers))
   with Net {
 
+  override private[zoo] def toKeras2(): String = {
+    var params = Net.inputShapeToString(inputShape) ++
+      Net.param(getName())
+    val kerasLayerName = mode match {
+      case "sum" => "Add"
+      case "mul" => "Multiply"
+      case "max" => "Maximum"
+      case "ave" => "Average"
+      case "sub" => "Subtract"
+      case "min" => "Minimum"
+      case "concat" =>
+        params ++= Net.param(concatAxis, "axis")
+        "Concatenate"
+      case "dot" => "Dot"
+      case _ =>
+        throw new IllegalArgumentException(s"Merge ${mode} is not supported in Keras2")
+    }
+    Net.kerasDef(kerasLayerName, params)
+  }
+
   private val mergeMode = mode.toLowerCase()
   private var axis = concatAxis
 
@@ -68,7 +88,6 @@ class Merge[T: ClassTag](
   }
 
   private def computeOutputShapeForConcat(input: List[Shape]): Shape = {
-    import scala.util.control.Breaks._
     val input1 = input.head.toSingle().toArray
     val output = input1.clone()
     require(Math.abs(concatAxis) < output.length, s"Invalid concat axis $concatAxis")
@@ -78,16 +97,15 @@ class Merge[T: ClassTag](
       val input_i = input(i).toSingle().toArray
       var j = 0
       while (j < input_i.length) {
-        if (j != axis) require(input_i(j)==output(j), s"Incompatible input dimension for merge " +
+        if (j != axis && (input_i(j) != -1 || output(j) != -1)) require(input_i(j)==output(j),
+          s"Incompatible input dimension for merge " +
           s"mode concat: (${output.deep.mkString(", ")}), " +
           s"(${input_i.deep.mkString(", ")})")
         j += 1
       }
-      if (output(axis) == -1 || input_i(axis) == -1) {
-        output(i) = -1
-        break
+      if (output(axis) != -1) {
+        output(axis) += input_i(axis)
       }
-      output(axis) = output(axis) + input_i(axis)
       i += 1
     }
     Shape(output)

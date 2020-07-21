@@ -24,7 +24,7 @@ import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
 import com.intel.analytics.bigdl.utils._
 import com.intel.analytics.bigdl.{nn => bnn}
 import com.intel.analytics.zoo.pipeline.api.keras.layers._
-import com.intel.analytics.zoo.pipeline.api.keras.layers.internal.{InternalCAddTable, InternalMM}
+import com.intel.analytics.zoo.pipeline.api.keras.layers.internal._
 import com.intel.analytics.zoo.pipeline.api.keras.models._
 
 import scala.reflect.ClassTag
@@ -57,17 +57,17 @@ object AutoGrad {
    * Sum of the values in a variable, alongside the specified axis.
    * @param x A variable.
    * @param axis axis to compute the mean. 0-based indexed.
-   * @param keepdims A boolean, whether to keep the dimensions or not.
+   * @param keepDims A boolean, whether to keep the dimensions or not.
    * If `keepDims` is `False`, the rank of the variable is reduced
    * by 1. If `keepDims` is `True`,
    * the reduced dimensions are retained with length 1.
    * @return A variable with the mean of elements of `x`.
    */
-  def sum[T: ClassTag](x: Variable[T], axis: Int = 0, keepdims: Boolean = false)(
+  def sum[T: ClassTag](x: Variable[T], axis: Int = 0, keepDims: Boolean = false)(
       implicit ev: TensorNumeric[T]): Variable[T] = {
     val o: KerasLayer[Activity, Activity, T] =
       new KerasLayerWrapper[T](bnn.Sum[T](dimension = normalizeAxis(axis) + 1,
-        squeeze = !keepdims).asInstanceOf[AbstractModule[Activity, Activity, T]])
+        squeeze = !keepDims).asInstanceOf[AbstractModule[Activity, Activity, T]])
     Variable(o.inputs(x.node))
   }
 
@@ -136,8 +136,8 @@ object AutoGrad {
    * Mean of a tensor, alongside the specified axis.
    * @param axis axis to compute the mean. 0-based indexed.
    * @param keepDims A boolean, whether to keep the dimensions or not.
-   *If `keepdims` is `False`, the rank of the tensor is reduced
-   *by 1. If `keep_dims` is `True`,
+   *If `keepDims` is `False`, the rank of the tensor is reduced
+   *by 1. If `keepDims` is `True`,
    *the reduced dimensions are retained with length 1.
    * @return
    *         A tensor with the mean of elements of `x`.
@@ -233,8 +233,7 @@ object AutoGrad {
    */
   def expandDims[T: ClassTag](x: Variable[T], axis: Int)(
       implicit ev: TensorNumeric[T]): Variable[T] = {
-    val layer = new KerasLayerWrapper[T](
-      bnn.Unsqueeze[T](pos = axis + 1).asInstanceOf[AbstractModule[Activity, Activity, T]])
+    val layer = ExpandDim(axis).asInstanceOf[AbstractModule[Activity, Activity, T]]
     val expanded = Variable(layer.inputs(x.node))
     contiguous(expanded)
   }
@@ -259,29 +258,54 @@ object AutoGrad {
   def mm[T: ClassTag](
       x: Variable[T],
       y: Variable[T],
-      axes: List[Int])(implicit ev: TensorNumeric[T]): Variable[T] = {
+      axes: List[Int] = null)(implicit ev: TensorNumeric[T]): Variable[T] = {
     require(x.getOutputShape().isInstanceOf[SingleShape], "Only accept single shape")
     require(y.getOutputShape().isInstanceOf[SingleShape], "Only accept single shape")
-    val xShape = x.getOutputShape().toSingle().toArray
-    val yShape = y.getOutputShape().toSingle().toArray
-    require(axes.length == 2, s"axes.length should be 2, but got: ${axes.length}")
+    var xx = x
+    var yy = y
+    var yShape = yy.getOutputShape().toSingle()
+    var xShape = xx.getOutputShape().toSingle()
+    if (yShape.size > xShape.size) {
+      xx = AutoGrad.expandDims(x, 0)
+    } else if (yShape.size < xShape.size) {
+      yy = AutoGrad.expandDims(y, 0)
+    }
+    xShape = xx.getOutputShape().toSingle()
+    yShape = yy.getOutputShape().toSingle()
+    var transposeX = false
+    var transposeY = false
+    var left = 0
+    var right = 0
     if (xShape.length == 2 && yShape.length == 2) {
-      require(axes(0) >= 0 && axes(0) <= 1, s"axes should between [0, 1], not ${axes(0)}")
-      require(axes(1) >= 0 && axes(1) <= 1, s"axes should between [0, 1], not ${axes(1)}")
-    } else if ((xShape.length == 3 && yShape.length == 3)) {
-      require(axes(0) >= 1 && axes(0) <= 2, s"axes should between [1, 2], not ${axes(0)}")
-      require(axes(1) >= 1 && axes(1) <= 2, s"axes should between [1, 2], not ${axes(1)}")
-    } else {
-      throw new IllegalArgumentException(s"Only support 2D and 3D input for now," +
-        s"but got [${xShape.mkString(",")}] and [${xShape.mkString(",")}]")
+      left = 0
+      right = 1
+    } else if (xShape.length == 3 && yShape.length == 3) {
+      left = 1
+      right = 2
+    } else if (xShape.length == 4 && yShape.length == 4) {
+      left = 2
+      right = 3
+    } else if (xShape.length > 4 && yShape.length > 4) {
+        throw new IllegalArgumentException(s"Only support 2D/3D/4D input for now," +
+          s"but got [${xShape.mkString(",")}] and [${xShape.mkString(",")}]")
+      }
+    if (axes != null) {
+      require(axes.length == 2, s"axes.length should be 2, but got: ${axes.length}")
+      require(axes(0) >= left && axes(0) <= right,
+        s"axes should between [$left, $right], not ${axes(0)}")
+      require(axes(1) >= left && axes(1) <= right,
+        s"axes should between [$left, $right], not ${axes(1)}")
+      transposeX = if (axes(0) != xShape.length - 1) {true} else {false}
+      transposeY = if (axes(1) == yShape.length - 1) {true} else {false}
     }
 
-    val transposeX = if (axes(0) != xShape.length - 1) {true} else {false}
-    val transposeY = if (axes(1) == yShape.length - 1) {true} else {false}
     val mm = InternalMM[T](transA = transposeX,
       transB = transposeY)
     val kmm = new KerasLayerWrapper[T](mm.asInstanceOf[AbstractModule[Activity, Activity, T]])
-    kmm.from(x, y)
+
+    if (xShape.length > 3 || yShape.length > 3) {
+      TimeDistributed(kmm.asInstanceOf[KerasLayer[Activity, Tensor[T], T]]).from(xx, yy)
+    } else kmm.from(xx, yy)
   }
 
   /**
@@ -292,7 +316,7 @@ object AutoGrad {
    */
   def l2Normalize[T: ClassTag](x: Variable[T], axis: Int)
       (implicit ev: TensorNumeric[T]): Variable[T] = {
-    val l2Normalize = x / sqrt(maximum(sum(x * x, axis, keepdims = true), epsilon()))
+    val l2Normalize = x / sqrt(maximum(sum(x * x, axis, keepDims = true), epsilon()))
     l2Normalize
   }
 
@@ -315,7 +339,7 @@ object AutoGrad {
     require(xShape.length == 2 || xShape.length == 3,
       s"Only support 2D and 3D for now, but got: ${xShape.length}")
     if (xShape.length == 2) {
-      sum(x*y, axis = 1, keepdims = true)
+      sum(x*y, axis = 1, keepDims = true)
     } else {
       mm(x, y, axes)
     }
@@ -324,6 +348,17 @@ object AutoGrad {
     val l2_y = l2Normalize(y, axes(1))
     batchDot(l2_x, l2_y, axes = axes)
     }
+  }
+
+  /**
+   * Computes the error function(Gauss error function) of each element.
+   * @param x A variable.
+   * @return A variable.
+   */
+  def erf[T: ClassTag](x: Variable[T])(
+    implicit ev: TensorNumeric[T]): Variable[T] = {
+    Variable(new KerasLayerWrapper[T](new InternalERF[T]()
+      .asInstanceOf[AbstractModule[Activity, Activity, T]]).inputs(x.node))
   }
 }
 
@@ -421,7 +456,7 @@ class Variable[T: ClassTag] private[zoo] (private[zoo] var node: ModuleNode[T],
 
   def *(a: Variable[T]): Variable[T] = {
     val o =
-      new KerasLayerWrapper[T](bnn.CMulTable[T]().asInstanceOf[AbstractModule[Activity, Activity, T]])
+      new KerasLayerWrapper[T](InternalCMulTable[T]().asInstanceOf[AbstractModule[Activity, Activity, T]])
     val (x, y) = broadcast(this, a)
     Variable(o.inputs(Array(x.node, y.node)))
   }
@@ -449,8 +484,19 @@ class Variable[T: ClassTag] private[zoo] (private[zoo] var node: ModuleNode[T],
    * Squeeze(dims = null) will give output size (2, 3, 4)
    */
   def squeeze(dim: Int): Variable[T] = {
-    val layer = Squeeze[T](dim)
-    Variable(layer.inputs(this.node))
+    val dims = new Array[Int](1)
+    dims(0) = dim
+    squeeze(dims)
+  }
+
+  def squeeze(dims: Array[Int]): Variable[T] = {
+    val blayer = if (dims == null){
+       com.intel.analytics.bigdl.nn.Squeeze[T](null, batchMode = false)
+    } else {
+      com.intel.analytics.bigdl.nn.Squeeze[T](dims.map(x => x + 1), batchMode = false)
+    }
+    val klayer = new KerasLayerWrapper[T](blayer)
+    Variable(klayer.inputs(this.node))
   }
 
   /**
@@ -505,32 +551,30 @@ class Variable[T: ClassTag] private[zoo] (private[zoo] var node: ModuleNode[T],
 
     var yShape = yy.getOutputShape().toSingle()
     var xShape = xx.getOutputShape().toSingle()
+
     if (yShape.size > xShape.size) {
-      xx = AutoGrad.expandDims(x, 0)
+      xx = AutoGrad.expandDims(xx, 0)
+      xShape = xx.getOutputShape().toSingle()
     } else if (yShape.size < xShape.size) {
-      yy = AutoGrad.expandDims(y, 0)
+      yy = AutoGrad.expandDims(yy, 0)
+      yShape = yy.getOutputShape().toSingle()
     }
-    yShape = yy.getOutputShape().toSingle()
-    xShape = xx.getOutputShape().toSingle()
+
     require(xShape.size == yShape.size,
       s"The two variables should have the same dims," +
         s"but got: ${x.getOutputShape().toSingle().mkString(",")}" +
         s"and ${y.getOutputShape().toSingle().mkString(",")}")
 
-    var i = yShape.length - 1
-    while (i >= 1) { // Ignore the batch dim
-      if (yShape(i) != xShape(i)) {
-        if (yShape(i) == 1) {
-          yy = yy.replicate(i, xShape(i))
-        } else if (xShape(i) == 1) {
-          xx = xx.replicate(i, yShape(i))
-        } else {
-          throw new IllegalArgumentException(
-            s"Shape mismatch: x - ${xShape}, y -${yShape}")
-        }
-      }
-      i -= 1
+    // Ignore the batch dim
+    val xElements = xShape.drop(1).reduceLeft(_+_)
+    val yElements = yShape.drop(1).reduceLeft(_+_)
+    // should not expand batch dim here as it's -1
+    if (xElements < yElements) {
+      xx = xx.expand(yShape)
+    } else if (xElements > yElements) {
+      yy = yy.expand(xShape)
     }
+
     (xx, yy)
   }
   // scalastyle:on
@@ -540,6 +584,17 @@ class Variable[T: ClassTag] private[zoo] (private[zoo] var node: ModuleNode[T],
       new KerasLayerWrapper[T](
         bnn.Replicate[T](dim = axis + 1,
           nFeatures = times).asInstanceOf[AbstractModule[Activity, Activity, T]])
+    Variable(o.inputs(this.node))
+  }
+
+  /**
+   * Expand variable to configured size
+   * @param sizes target variable sizes, dim whose size is -1 will be ignored
+   */
+  def expand(sizes: List[Int]): Variable[T] = {
+    val o =
+      new KerasLayerWrapper[T](
+        InternalExpand[T](sizes.toArray).asInstanceOf[AbstractModule[Activity, Activity, T]])
     Variable(o.inputs(this.node))
   }
 

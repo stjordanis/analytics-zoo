@@ -77,7 +77,11 @@ class TestSimpleIntegration(ZooTestCase):
         model.fit(X_train, y_train, batch_size=112, nb_epoch=2, validation_data=(X_test, y_test))
         model.set_gradient_clipping_by_l2_norm(0.2)
         model.fit(X_train, y_train, batch_size=112, nb_epoch=2, validation_data=(X_test, y_test))
-        model.evaluate(X_test, y_test, batch_size=112)
+        train_loss = model.get_train_summary("Loss")
+        val_loss = model.get_validation_summary("Loss")
+        np.array(train_loss)
+        np.array(val_loss)
+        eval = model.evaluate(X_test, y_test, batch_size=112)
         result = model.predict(X_test).collect()
         for res in result:
             assert isinstance(res, np.ndarray)
@@ -223,6 +227,25 @@ class TestSimpleIntegration(ZooTestCase):
         assert word_index["for"] == 11
         assert word_index["as"] == 20
 
+    def test_set_evaluate_status(self):
+        model = Sequential().add(Dropout(0.2, input_shape=(4, ))).set_evaluate_status()
+        input_data = np.random.random([3, 4])
+        output = model.forward(input_data)
+        assert np.allclose(input_data, output)
+
+    def test_training_with_loss_metrics(self):
+        model = Sequential()
+        model.add(Dense(8, input_shape=(32, 32, )))
+        model.add(Flatten())
+        model.add(Dense(4, activation="softmax"))
+        X_train = np.random.random([200, 32, 32])
+        y_train = np.random.randint(4, size=(200, ))
+        X_test = np.random.random([40, 32, 32])
+        y_test = np.random.randint(4, size=(40, ))
+        model.compile(optimizer="adam",
+                      loss="sparse_categorical_crossentropy",
+                      metrics=['accuracy', 'loss'])
+        model.fit(X_train, y_train, validation_data=(X_test, y_test))
 
 if __name__ == "__main__":
     pytest.main([__file__])

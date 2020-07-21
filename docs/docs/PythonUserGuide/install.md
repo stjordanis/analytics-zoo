@@ -1,21 +1,32 @@
-For Python users, Analytics Zoo can be installed either [from pip](#install-from-pip) or [without pip](#install-without-pip).
+For Python users, Analytics Zoo can be installed either [from pip](#install-from-pip-for-local-usage) or [without pip](#install-without-pip).
 
-**NOTE**: Only __Python 2.7__, __Python 3.5__ and __Python 3.6__ are supported for now.
+**NOTE**: We have tested on __Python 3.6__ and __Python 3.7__. Support for Python 2.7 has been removed due to its end of life.
 
 ---
-## **Install from pip**
+## **Install the latest nightly build wheels for pip**
+You can find the list of the latest nightly build wheels for pip [here](https://sourceforge.net/projects/analytics-zoo/files/zoo-py/). 
+Choose a wheel with timestamp for your platform and click to download it to your local repository.
 
-Analytics Zoo can be installed via pip easily using the following command.
+Note that if you are using Linux, you need to choose the file `analytics_zoo-VERSION-TIMESTAMP-py2.py3-none-manylinux1_x86_64.whl`.
+If you are using Mac, choose `analytics_zoo-VERSION-TIMESTAMP-py2.py3-none-macosx_10_11_x86_64.whl` instead. 
 
-***Install analytics-zoo-0.3.0.dev0***
+After downloading the target wheel file, go to the download directory and run the following command:
+```bash
+pip install analytics_zoo-*-py2.py3-none-*_x86_64.whl
+```
+See [here](#install-from-pip-for-local-usage) for some remarks with regard to pip install.
 
-* Note that you might need to add `sudo` if you don't have the permission for installation.
+---
+## **Install from pip for local usage**
+You can use the following command to install the latest release version of __analytics-zoo__ via pip easily:
 
 ```bash
-pip install --upgrade pip
-pip install analytics-zoo==0.3.0.dev0     # for Python 2.7
-pip3 install analytics-zoo==0.3.0.dev0    # for Python 3.5 and Python 3.6
+pip install analytics-zoo
 ```
+
+* You are strongly recommended to use Python 3.6 or 3.7. You might need to run `pip3 install analytics-zoo` instead.
+* You might need to add `sudo` if you don't have the permission for installation.
+* See [here](#install-the-latest-nightly-build-wheels-for-pip) if you want to install the latest nightly build version.
 
 **Important:**
 
@@ -29,12 +40,53 @@ sc = init_nncontext()
 
 **Remarks:**
 
-1. We've tested this package with pip 9.0.1.
+1. We've tested this package with pip 9.0.1. `pip install --upgrade pip` if necessary.
 2. Pip install supports __Mac__ and __Linux__ platforms.
-3. Pip install only supports __local__ mode. Cluster mode might be supported in the future. For those who want to use Analytics Zoo in cluster mode, please try to [install without pip](#install-without-pip).
-4. You need to install Java __>= JDK8__ before running Analytics Zoo, which is required by `pyspark`.
-5. `pyspark`(2.2), `bigdl==0.6.0` and its dependencies will be automatically installed if they haven't been detected in the current Python environment.
+3. You need to install Java __>= JDK8__ before running Analytics Zoo, which is required by `pyspark`.
+4. `bigdl==0.10.0`, `pyspark==2.4.3`, `conda-pack==0.3.1` and their dependencies will be automatically installed if they haven't been detected in the current Python environment.
 
+---
+## **Install from pip for Yarn cluster**
+
+You only need to following these steps on your driver node and we only support __yarn-client mode__ for now.
+
+1) Install [Conda](https://docs.conda.io/projects/conda/en/latest/commands/install.html) in your environment.
+
+2) Create a new conda environment (with name "zoo" for example):
+```
+conda create -n zoo python=3.6
+source activate zoo
+```
+
+3) Install the latest release version of __analytics-zoo__ into the created conda environment.
+
+```
+pip install analytics-zoo
+```
+
+See [here](#install-the-latest-nightly-build-wheels-for-pip) if you want to install the latest nightly build version.
+
+4) Download JDK8 and set the environment variable: JAVA_HOME (recommended).
+
+You can also install JDK via conda without setting the JAVA_HOME manually:
+
+`conda install -c anaconda openjdk=8.0.152`
+
+5) Start `python` and then execute the following code to create a SparkContext on Yarn for verification:
+
+``` python
+from zoo import init_spark_on_yarn
+
+sc = init_spark_on_yarn(
+    hadoop_conf="path to the yarn configuration folder",
+    conda_name="zoo", # The name of the created conda-env
+    num_executor=2,
+    executor_cores=4,
+    executor_memory="8g",
+    driver_memory="2g",
+    driver_cores=4,
+    extra_executor_memory_for_ray="10g")
+```
 
 ---
 ## **Install without pip**
@@ -48,8 +100,8 @@ If you choose to install Analytics Zoo without pip, you need to prepare Spark an
     - Note that __Python 3.6__ is only compatible with Spark 1.6.4, 2.0.3, 2.1.1 and >=2.2.0. See [this issue](https://issues.apache.org/jira/browse/SPARK-19019) for more discussion.
 
 
-2. You can download the Analytics Zoo release and nightly build from the [Release Page](../release-download.md)
-  or build the Analytics Zoo package from [source](../ScalaUserGuide/install/#build-with-script-recommended).
+2. You are recommended to download Analytics Zoo prebuilt release package from the [Release Page](../release-download/) and extract it.
+Alternatively, you can also build the Analytics Zoo from [source](../ScalaUserGuide/install/#build-with-script-recommended).
 
 3. Install Python dependencies. Analytics Zoo only depends on `numpy` and `six` for now.
 
@@ -65,30 +117,28 @@ If you choose to install Analytics Zoo without pip, you need to prepare Spark an
 
 You can run Analytics Zoo Python programs on Yarn clusters without changes to the cluster (i.e., no need to pre-install any Python dependency).
 
-You can first package all the required dependencies into a virtual environment on the local node (where you will run the spark-submit command),
-and then directly use spark-submit to run the Analytics Zoo Python program on the Yarn cluster using that virtual environment.
+You can first package all the required dependencies into a conda environment on the local node (where you will run the spark-submit command),
+and then directly use spark-submit to run the Analytics Zoo Python program on the Yarn cluster using that conda environment.
 
-Follow the steps below to create the virtual environment: 
+Follow the steps below to create the conda environment:
    
-* Make sure you already installed such libraries (python-setuptools, python-dev, gcc, make, zip, pip) for creating the virtual environment. If not, please install them first.
-On Ubuntu, you can run these commands to install:
+1) Install [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) in your environment.
+
+2) Create a new conda environment (with name "environment" for example):
 ```
-apt-get update
-apt-get install -y python-setuptools python-dev
-apt-get install -y gcc make
-apt-get install -y zip
-easy_install pip
+conda create -n environment python=3.6 pip=20.0.2 setuptools=45.2.0 conda-pack==0.3.1
+conda activate environment
 ```
-* Create the virtualenv package for dependencies.
-    * Under $ANALYTICS_ZOO_HOME (the dist directory under the Analytics Zoo project), you can find ```bin/python_package.sh```. Run this script to create the dependency virtual environment according to the dependencies listed in `requirements.txt`. You can add your own dependencies into this file if you wish. The current requirements only contain those needed for running Analytics Zoo Python examples and models.
 
-    * After running this script, there will be `venv.zip` and `venv` directory generated in current directory. You can use them to submit your Python jobs. Please refer to [here](run.md#run-with-virtual-environment-on-yarn) for the commands to submit an Analytics Zoo Python job with the created virtual environment in Yarn cluster.
+3) Install python dependencies into the created conda environment.
+Install the dependencies according to the dependencies listed in `requirements.txt`. You can add your own dependencies into this file if you wish. The current requirements only contain those needed for running Analytics Zoo Python examples and models.
+```
+pip install -r ${ANALYTICS_ZOO_HOME}/bin/requirements.txt
+```
 
-__FAQ__
+4) Create conda package for the created conda environment
 
-In case you encounter the following errors when you create the environment package using the above command:
-
-1. virtualenv ImportError: No module named urllib3
-    - Using python in anaconda to create virtualenv may cause this problem. Try using python default in your system instead of installing virtualenv in anaconda.
-2. AttributeError: 'module' object has no attribute 'sslwrap'
-    - Try upgrading `gevent` with `pip install --upgrade gevent`.
+```
+conda pack -o environment.tar.gz
+```
+Then you can find the conda package file under the current directory.
